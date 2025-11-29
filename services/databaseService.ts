@@ -154,6 +154,19 @@ export const updateUserSettings = async (userId: string, settings: UserSettings)
   if (error) throw error;
 };
 
+export const updateUserTokens = async (userId: string, mlUserId: string, accessToken: string, refreshToken: string) => {
+  const { error } = await supabase
+    .from('users')
+    .update({
+      ml_user_id: mlUserId,
+      ml_access_token: accessToken,
+      ml_refresh_token: refreshToken,
+    })
+    .eq('id', userId);
+
+  if (error) throw error;
+};
+
 // --- HELPERS ---
 
 const calculateAvgSales = (history: any[]) => {

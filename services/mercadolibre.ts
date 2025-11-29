@@ -14,11 +14,34 @@ const getEnvVar = (key: string, fallback: string) => {
 
 const ML_API_URL = 'https://api.mercadolibre.com';
 const APP_ID = getEnvVar('NEXT_PUBLIC_ML_APP_ID', 'YOUR_APP_ID');
-const REDIRECT_URI = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', 'http://localhost:3000/api/auth/callback');
 
 // 1. Authentication & Tokens
-export const getAuthUrl = () => {
-  return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${APP_ID}&redirect_uri=${REDIRECT_URI}`;
+export const getAuthUrl = (origin: string) => {
+  // Use the env var if explicitly set, otherwise default to current origin (useful for Vercel preview/production)
+  const redirectUri = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', origin);
+  return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${APP_ID}&redirect_uri=${redirectUri}`;
+};
+
+export const handleAuthCallback = async (code: string, userId: string) => {
+    // In a production backend app, we would POST to https://api.mercadolibre.com/oauth/token
+    // with client_secret to get the access_token.
+    
+    // Since this is a client-side only demo/implementation without a secure backend to hold CLIENT_SECRET:
+    // We will simulate the token exchange success and generate "dummy" tokens that effectively "Log In" the user in our database.
+    // If you have a backend, replace this with a real fetch call.
+    
+    console.log(`Processing code ${code} for user ${userId}`);
+
+    const mockAccessToken = `TG-${Math.random().toString(36).substring(7)}-${Date.now()}`;
+    const mockRefreshToken = `TG-${Math.random().toString(36).substring(7)}`;
+    const mockMlUserId = "123456789"; 
+
+    // Return the data to be saved in Supabase
+    return {
+        access_token: mockAccessToken,
+        refresh_token: mockRefreshToken,
+        user_id: mockMlUserId
+    };
 };
 
 // 2. Fetch Full Stock (Real Endpoint Logic)

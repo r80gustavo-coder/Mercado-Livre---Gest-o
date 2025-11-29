@@ -26,9 +26,11 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
   };
 
   const handleConnect = () => {
-    const url = getAuthUrl();
-    // In a real app, this redirects. Here we just open in new tab to not lose state
-    window.open(url, '_blank');
+    // Generate Auth URL based on current window location
+    const url = getAuthUrl(window.location.origin);
+    
+    // Redirect user to Mercado Livre Auth
+    window.location.href = url;
   };
 
   return (

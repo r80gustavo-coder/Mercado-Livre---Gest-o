@@ -6,6 +6,7 @@ import FactoryControl from './components/FactoryControl';
 import BatchManager from './components/BatchManager';
 import Settings from './components/Settings';
 import Login from './components/Login';
+import AuthCallback from './components/AuthCallback';
 import { Product, Batch, ViewState, BatchItem, UserSettings, BatchStatus } from './types';
 import { syncMercadoLivreData } from './services/syncService';
 import { LogOut, Bell, Loader2, AlertTriangle, Terminal } from 'lucide-react';
@@ -81,6 +82,12 @@ const App: React.FC = () => {
 
   // 1. Auth Listener
   useEffect(() => {
+    // Check url for OAuth callback
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('code')) {
+      setCurrentView(ViewState.CALLBACK);
+    }
+
     // Check active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -98,10 +105,10 @@ const App: React.FC = () => {
 
   // 2. Data Fetching
   useEffect(() => {
-    if (session?.user) {
+    if (session?.user && currentView !== ViewState.CALLBACK) {
       loadUserData();
     }
-  }, [session]);
+  }, [session, currentView]);
 
   const loadUserData = async () => {
     if (!session?.user?.id) return;
@@ -263,8 +270,16 @@ const App: React.FC = () => {
   };
 
   // View Logic
-  if (!session) {
+  if (!session && currentView !== ViewState.CALLBACK) {
     return <Login onLogin={() => {}} />; 
+  }
+
+  // Handle Callback View
+  if (currentView === ViewState.CALLBACK) {
+      return <AuthCallback onSuccess={() => {
+          setCurrentView(ViewState.SETTINGS); // or DASHBOARD
+          loadUserData();
+      }} />;
   }
 
   if (loadingData && products.length === 0) {

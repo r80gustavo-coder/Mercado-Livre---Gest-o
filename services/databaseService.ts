@@ -1,6 +1,5 @@
-
 import { supabase } from '../lib/supabaseClient';
-import { Product, Batch, UserSettings, BatchItem } from '../types';
+import { Product, Batch, UserSettings } from '../types';
 
 // --- PRODUCTS ---
 
@@ -21,7 +20,6 @@ export const getProducts = async (userId: string): Promise<Product[]> => {
     return [];
   }
 
-  // Map DB structure to App structure
   return data.map((item: any) => ({
     id: item.id,
     user_id: item.user_id,
@@ -60,7 +58,6 @@ export const createProduct = async (userId: string, product: Partial<Product>) =
 };
 
 export const updateProductStock = async (productId: string, updates: Partial<Product>) => {
-  // We only map specific fields that exist in the DB table
   const dbUpdates: any = {};
   if (updates.stock_factory !== undefined) dbUpdates.stock_factory = updates.stock_factory;
   if (updates.stock_scheduled !== undefined) dbUpdates.stock_scheduled = updates.stock_scheduled;
@@ -77,14 +74,6 @@ export const updateProductStock = async (productId: string, updates: Partial<Pro
 // --- BATCHES ---
 
 export const getBatches = async (userId: string): Promise<Batch[]> => {
-  // Fetch batches and join with batch_items
-  // Note: For simplicity in this demo, assuming 'batches' table has a JSONB column 'items' 
-  // or we fetch items separately. Since the schema defined previously was simple, 
-  // let's assume we store items in a JSON column or we'd need a separate table.
-  // To make it work with the previous schema structure provided:
-  // We will assume the 'batches' table has been updated or we just fetch basic info.
-  // For this implementation, I will treat the DB as having the structure we need.
-  
   const { data, error } = await supabase
     .from('batches')
     .select('*')
@@ -98,7 +87,7 @@ export const getBatches = async (userId: string): Promise<Batch[]> => {
 
   return data.map((b: any) => ({
     id: b.id,
-    items: b.items || [], // Assuming JSONB column for items for simplicity
+    items: b.items || [], 
     total_quantity: b.quantity,
     status: b.status,
     sent_date: b.sent_date,
@@ -114,7 +103,7 @@ export const createBatch = async (userId: string, batch: Partial<Batch>) => {
       quantity: batch.total_quantity,
       status: batch.status,
       sent_date: batch.sent_date,
-      items: batch.items // Storing as JSONB
+      items: batch.items 
     }])
     .select()
     .single();
@@ -140,7 +129,7 @@ export const updateBatchStatus = async (batchId: string, status: string, receive
 export const getUserSettings = async (userId: string): Promise<UserSettings> => {
   const { data, error } = await supabase
     .from('users')
-    .select('ml_user_id, ml_access_token, alert_threshold') // Assuming we added alert_threshold to users table
+    .select('ml_user_id, ml_access_token, alert_threshold')
     .eq('id', userId)
     .single();
 
@@ -150,7 +139,7 @@ export const getUserSettings = async (userId: string): Promise<UserSettings> => 
     is_connected_ml: !!data.ml_access_token,
     ml_user_id: data.ml_user_id,
     alert_threshold_days: data.alert_threshold || 5,
-    last_sync: undefined // Not stored in DB usually
+    last_sync: undefined 
   };
 };
 
@@ -159,7 +148,6 @@ export const updateUserSettings = async (userId: string, settings: UserSettings)
     .from('users')
     .update({
       alert_threshold: settings.alert_threshold_days,
-      // We don't update tokens here usually, that's handled by OAuth callback
     })
     .eq('id', userId);
     

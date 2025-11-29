@@ -1,4 +1,3 @@
-
 export interface Product {
   id: string;
   sku: string;
@@ -6,11 +5,12 @@ export interface Product {
   image_url: string;
   cost_per_unit: number;
   stock_factory: number;
-  stock_scheduled: number; // New field: Scheduled/In Transit
+  stock_scheduled: number;
   stock_full: number;
   avg_daily_sales: number;
   sales_history: Sale[];
   ml_item_id?: string;
+  user_id?: string;
 }
 
 export interface Sale {
@@ -28,8 +28,8 @@ export interface BatchItem {
 
 export interface Batch {
   id: string;
-  items: BatchItem[]; // Changed to support multiple items
-  total_quantity: number; // Helper for display
+  items: BatchItem[];
+  total_quantity: number;
   status: BatchStatus;
   sent_date: string;
   received_date?: string;

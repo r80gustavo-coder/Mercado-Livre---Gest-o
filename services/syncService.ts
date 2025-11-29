@@ -1,4 +1,3 @@
-
 import { Product } from '../types';
 import { fetchFullStock, fetchSalesHistory } from './mercadolibre';
 
@@ -40,8 +39,6 @@ export const syncMercadoLivreData = async (
 
     // Calculate new Sales History if we have data
     let newSalesHistory = product.sales_history;
-    let newAvg = product.avg_daily_sales;
-
     // (Simplified sales merge logic here would go here in real app)
     
     return {

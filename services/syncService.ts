@@ -40,7 +40,8 @@ export const syncMercadoLivreData = async (
             console.log("Retrying sync with new token...");
             return await executeSync(currentProducts, newTokens.access_token, newTokens.user_id);
         } else {
-            console.error("Failed to refresh token.");
+            console.error("Failed to refresh token. Disconnecting...");
+            await db.disconnectMLAccount(dbUserId);
             throw new Error("Sessão expirada. Reconecte sua conta do Mercado Livre.");
         }
     }
@@ -117,6 +118,9 @@ export const importProductsFromML = async (
              if (newTokens) {
                  await db.updateUserTokens(dbUserId, newTokens.user_id, newTokens.access_token, newTokens.refresh_token);
                  return await executeImport(newTokens.access_token);
+             } else {
+                 await db.disconnectMLAccount(dbUserId);
+                 throw new Error("Sessão expirada. Reconecte sua conta.");
              }
         }
         throw error;

@@ -191,6 +191,19 @@ export const updateUserTokens = async (userId: string, mlUserId: string, accessT
   if (error) throw error;
 };
 
+export const disconnectMLAccount = async (userId: string) => {
+  const { error } = await supabase
+    .from('users')
+    .update({
+      ml_user_id: null,
+      ml_access_token: null,
+      ml_refresh_token: null
+    })
+    .eq('id', userId);
+
+  if (error) throw error;
+};
+
 // --- HELPERS ---
 
 const calculateAvgSales = (history: any[]) => {

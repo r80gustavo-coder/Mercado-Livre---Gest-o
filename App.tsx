@@ -174,6 +174,8 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error(e);
       showNotify(e.message || 'Erro ao sincronizar. Tente novamente.');
+      // Reload user data to reflect potential disconnection (if refresh failed)
+      await loadUserData();
     }
   };
   

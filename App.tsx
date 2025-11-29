@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import ProductList from './components/ProductList';
@@ -106,16 +105,13 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Data Fetching
-  useEffect(() => {
-    if (session?.user && currentView !== ViewState.CALLBACK) {
-      loadUserData();
-    }
-  }, [session, currentView]);
-
-  const loadUserData = async () => {
+  // 2. Data Fetching and Realtime Logic
+  const loadUserData = useCallback(async () => {
     if (!session?.user?.id) return;
-    setLoadingData(true);
+    
+    // Don't set loading true if we already have data (for background refresh)
+    if (products.length === 0) setLoadingData(true);
+
     try {
       const [fetchedProducts, fetchedBatches, fetchedSettings] = await Promise.all([
         db.getProducts(session.user.id),
@@ -131,7 +127,44 @@ const App: React.FC = () => {
     } finally {
       setLoadingData(false);
     }
-  };
+  }, [session?.user?.id]); // Only recreate if user changes
+
+  // Initial Load
+  useEffect(() => {
+    if (session?.user && currentView !== ViewState.CALLBACK) {
+      loadUserData();
+    }
+  }, [session, currentView, loadUserData]);
+
+  // Realtime Subscription
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    // Use a debounce to prevent spamming refreshes
+    let debounceTimer: any;
+    const refreshData = () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            console.log("Realtime update detected. Refreshing data...");
+            loadUserData();
+        }, 1000);
+    };
+
+    const productSub = supabase
+      .channel('public:products')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products', filter: `user_id=eq.${session.user.id}` }, refreshData)
+      .subscribe();
+
+    const batchSub = supabase
+      .channel('public:batches')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'batches', filter: `user_id=eq.${session.user.id}` }, refreshData)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(productSub);
+      supabase.removeChannel(batchSub);
+    };
+  }, [session?.user?.id, loadUserData]);
 
   // Actions
   const handleLogout = async () => {
@@ -145,7 +178,6 @@ const App: React.FC = () => {
   const handleSyncML = async () => {
     showNotify('Iniciando sincronização com Mercado Livre...');
     
-    // Use real tokens if connected, otherwise 'mock_token' fallback for simulation
     const accessToken = userSettings.is_connected_ml ? (userSettings.ml_access_token || 'mock_token') : null; 
     const refreshToken = userSettings.ml_refresh_token || null;
     const userId = userSettings.ml_user_id;
@@ -164,20 +196,17 @@ const App: React.FC = () => {
           session?.user?.id
       );
       
-      // Update DB for each changed product
-      for (const p of updatedProducts) {
-         await db.updateProductStock(p.id, { 
-             stock_full: p.stock_full 
-         });
-      }
+      // Update DB for each changed product in PARALLEL for performance
+      await Promise.all(updatedProducts.map(p => 
+         db.updateProductStock(p.id, { stock_full: p.stock_full })
+      ));
 
-      await loadUserData(); // Reload to get updated user settings (new tokens if refreshed)
+      // Note: We don't need to call loadUserData() here because Realtime listener will catch the DB updates!
       showNotify('Sincronização com Mercado Livre concluída!');
     } catch (e: any) {
       console.error(e);
       showNotify(e.message || 'Erro ao sincronizar. Tente novamente.');
-      // Reload user data to reflect potential disconnection (if refresh failed)
-      await loadUserData();
+      await loadUserData(); // Reload manual in case of error/token refresh state change
     }
   };
   
@@ -197,7 +226,7 @@ const App: React.FC = () => {
           );
           if (count > 0) {
               showNotify(`${count} novos produtos importados!`);
-              await loadUserData();
+              // Realtime will pick up the inserts
           } else {
               showNotify('Nenhum produto novo encontrado.');
           }
@@ -223,7 +252,6 @@ const App: React.FC = () => {
     
     try {
         await db.createProduct(session.user.id, newProductData);
-        await loadUserData();
         showNotify('Produto cadastrado com sucesso!');
     } catch (error) {
         console.error(error);
@@ -262,7 +290,6 @@ const App: React.FC = () => {
             }
         }
 
-        await loadUserData();
         showNotify('Envio criado! Estoque atualizado.');
         setCurrentView(ViewState.BATCHES);
 
@@ -288,8 +315,6 @@ const App: React.FC = () => {
                 });
             }
         }
-
-        await loadUserData();
         showNotify(`Lote recebido. Estoque Full atualizado!`);
     } catch (error) {
         showNotify('Erro ao receber lote.');
@@ -299,9 +324,6 @@ const App: React.FC = () => {
   const handleUpdateFactoryStock = async (productId: string, newStock: number) => {
     try {
         await db.updateProductStock(productId, { stock_factory: newStock });
-        setProducts(prev => prev.map(p => 
-            p.id === productId ? { ...p, stock_factory: newStock } : p
-        ));
         showNotify('Estoque de fábrica atualizado.');
     } catch (error) {
         showNotify('Erro ao atualizar estoque.');
@@ -315,10 +337,21 @@ const App: React.FC = () => {
 
   // Handle Callback View
   if (currentView === ViewState.CALLBACK) {
-      return <AuthCallback onSuccess={() => {
-          setCurrentView(ViewState.SETTINGS); // or DASHBOARD
-          loadUserData();
-      }} />;
+      return (
+        <AuthCallback 
+          onSuccess={() => {
+            // Remove code from url so we don't loop
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setCurrentView(ViewState.SETTINGS);
+            loadUserData();
+          }} 
+          onBack={() => {
+             // Remove code from url
+             window.history.replaceState({}, document.title, window.location.pathname);
+             setCurrentView(ViewState.SETTINGS);
+          }}
+        />
+      );
   }
 
   if (loadingData && products.length === 0) {

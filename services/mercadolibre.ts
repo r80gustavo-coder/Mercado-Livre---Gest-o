@@ -1,4 +1,3 @@
-
 import { Product } from '../types';
 
 /**
@@ -60,9 +59,24 @@ export const handleAuthCallback = async (code: string, userId: string) => {
             });
 
             const data = await response.json();
+            
             if (!response.ok) {
                 console.error("Token Exchange Error:", data);
-                throw new Error(data.message || "Failed to exchange token");
+                
+                // Tratar erros comuns com mensagens amigáveis
+                let errorMessage = "Falha na conexão com o Mercado Livre.";
+                
+                if (data.error === 'invalid_grant') {
+                    errorMessage = "O código de autorização expirou ou já foi utilizado. Tente conectar novamente.";
+                } else if (data.error === 'invalid_client') {
+                    errorMessage = "Erro de configuração: Client Secret ou App ID inválidos no Vercel.";
+                } else if (data.error === 'redirect_uri_mismatch') {
+                    errorMessage = `Erro de URL: A URL de redirecionamento (${redirectUri}) não coincide com a cadastrada no seu App do Mercado Livre.`;
+                } else if (data.message) {
+                    errorMessage = `Erro do ML: ${data.message}`;
+                }
+
+                throw new Error(errorMessage);
             }
             
             return {
@@ -70,9 +84,9 @@ export const handleAuthCallback = async (code: string, userId: string) => {
                 refresh_token: data.refresh_token,
                 user_id: data.user_id?.toString()
             };
-        } catch (e) {
+        } catch (e: any) {
             console.error("Error in real token exchange:", e);
-            throw e;
+            throw e; // Repassa o erro com a mensagem tratada acima
         }
     }
 

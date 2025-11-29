@@ -1,5 +1,7 @@
+
 import { Product } from '../types';
-import { fetchFullStock, fetchSalesHistory } from './mercadolibre';
+import { fetchFullStock, fetchSalesHistory, fetchActiveFullItems, refreshMLToken } from './mercadolibre';
+import * as db from './databaseService';
 
 /**
  * SYNC SERVICE
@@ -9,62 +11,127 @@ import { fetchFullStock, fetchSalesHistory } from './mercadolibre';
 export const syncMercadoLivreData = async (
   currentProducts: Product[],
   accessToken: string | null,
-  userId: string | null
+  userId: string | null,
+  refreshToken: string | null, // Added Refresh Token
+  dbUserId: string // Added DB User ID for saving tokens
 ): Promise<Product[]> => {
   
   // 1. Validation
   if (!accessToken || !userId) {
     console.warn("Cannot sync: Missing ML credentials");
-    // In a real app, this would throw error or return current state
     return simulateSync(currentProducts);
   }
 
-  // 2. Fetch Real Data (Parallel execution)
-  const [stockData, salesData] = await Promise.all([
-    fetchFullStock(accessToken, userId),
-    fetchSalesHistory(accessToken, userId)
-  ]);
+  try {
+    // 2. Try Fetch Real Data
+    return await executeSync(currentProducts, accessToken, userId);
 
-  // 3. Merge with Local Products
-  // We match products by SKU or ML Item ID
-  const updatedProducts = currentProducts.map(product => {
-    let mlItem = null;
-    
-    // Try to find match in fetched stock data
-    if (product.ml_item_id) {
-        mlItem = stockData.find((i: any) => i.ml_item_id === product.ml_item_id);
-    } else {
-        mlItem = stockData.find((i: any) => i.sku === product.sku);
+  } catch (error: any) {
+    // 3. Handle Token Expiration
+    if (error.message === "UNAUTHORIZED" && refreshToken) {
+        console.log("Token expired. Attempting refresh...");
+        
+        const newTokens = await refreshMLToken(refreshToken);
+        
+        if (newTokens) {
+            console.log("Token refreshed successfully. Saving to DB...");
+            await db.updateUserTokens(dbUserId, newTokens.user_id, newTokens.access_token, newTokens.refresh_token);
+            
+            console.log("Retrying sync with new token...");
+            return await executeSync(currentProducts, newTokens.access_token, newTokens.user_id);
+        } else {
+            console.error("Failed to refresh token.");
+            throw new Error("Sessão expirada. Reconecte sua conta do Mercado Livre.");
+        }
     }
-
-    // Calculate new Sales History if we have data
-    let newSalesHistory = product.sales_history;
-    // (Simplified sales merge logic here would go here in real app)
     
-    return {
-      ...product,
-      stock_full: mlItem ? mlItem.stock_full : product.stock_full, // Update stock from Full
-      // ml_item_id: mlItem ? mlItem.ml_item_id : product.ml_item_id, // Link ID if found
-    };
-  });
-
-  return updatedProducts;
+    // Propagate other errors
+    throw error;
+  }
 };
 
-// Fallback simulator for this demo environment since we don't have a real valid Access Token
+// Helper to execute the fetch logic
+const executeSync = async (products: Product[], token: string, uid: string) => {
+    const [stockData, salesData] = await Promise.all([
+        fetchFullStock(token, uid),
+        fetchSalesHistory(token, uid)
+    ]);
+  
+    // Merge logic
+    return products.map(product => {
+      let mlItem = null;
+      if (product.ml_item_id) {
+          mlItem = stockData.find((i: any) => i.ml_item_id === product.ml_item_id);
+      } else {
+          mlItem = stockData.find((i: any) => i.sku === product.sku);
+      }
+      return {
+        ...product,
+        stock_full: mlItem ? mlItem.stock_full : product.stock_full,
+      };
+    });
+};
+
+// New function to import products not yet in the system
+export const importProductsFromML = async (
+    currentProducts: Product[], 
+    accessToken: string | null, 
+    mlUserId: string | null,
+    dbUserId: string,
+    refreshToken: string | null
+) => {
+    if (!accessToken || !mlUserId) {
+        throw new Error("Conecte ao Mercado Livre primeiro.");
+    }
+
+    const executeImport = async (token: string) => {
+        const mlItems = await fetchActiveFullItems(token, mlUserId);
+        const newItems = mlItems.filter((item: any) => {
+            const exists = currentProducts.some(p => 
+                p.sku === item.sku || p.ml_item_id === item.ml_item_id
+            );
+            return !exists;
+        });
+
+        if (newItems.length === 0) return 0;
+
+        const productsToCreate = newItems.map((item: any) => ({
+            title: item.title,
+            sku: item.sku,
+            image_url: item.image_url,
+            stock_full: item.stock_full,
+            stock_factory: 0,
+            cost_per_unit: 0,
+            ml_item_id: item.ml_item_id
+        }));
+
+        await db.bulkCreateProducts(dbUserId, productsToCreate);
+        return newItems.length;
+    };
+
+    try {
+        return await executeImport(accessToken);
+    } catch (error: any) {
+        if (error.message === "UNAUTHORIZED" && refreshToken) {
+             const newTokens = await refreshMLToken(refreshToken);
+             if (newTokens) {
+                 await db.updateUserTokens(dbUserId, newTokens.user_id, newTokens.access_token, newTokens.refresh_token);
+                 return await executeImport(newTokens.access_token);
+             }
+        }
+        throw error;
+    }
+};
+
 const simulateSync = (products: Product[]): Product[] => {
   return products.map(p => {
     const salesChange = Math.random() > 0.6 ? Math.floor(Math.random() * 4) : 0;
-    
-    // Shift sales history
     const newHistory = [...p.sales_history.slice(1)];
     newHistory.push({
         date: new Date().toISOString().split('T')[0],
         quantity: salesChange
     });
-
     const newStockFull = Math.max(0, p.stock_full - salesChange);
-
     return {
       ...p,
       stock_full: newStockFull,

@@ -1,3 +1,4 @@
+
 import { Product } from '../types';
 
 /**
@@ -13,25 +14,21 @@ const getEnvVar = (key: string, fallback: string) => {
 };
 
 // LOGIC TO FORCE REAL ID:
-// If the env var is set to the old placeholder "YOUR_APP_ID", we ignore it and use your real ID.
 const rawAppId = getEnvVar('NEXT_PUBLIC_ML_APP_ID', '6798471816186732');
 const APP_ID = rawAppId === 'YOUR_APP_ID' ? '6798471816186732' : rawAppId;
+// Client Secret is needed for Refresh Token flow (usually server-side, but used here for SPA architecture)
+const CLIENT_SECRET = getEnvVar('NEXT_PUBLIC_ML_CLIENT_SECRET', '');
 
 const ML_API_URL = 'https://api.mercadolibre.com';
 
 // Check if the app is running with default/missing credentials
 export const isMockConfiguration = () => {
-  // Only mock if ID is specifically missing or explicitly set to a mock string (which shouldn't happen now)
   return !APP_ID || APP_ID === 'YOUR_APP_ID';
 };
 
 // 1. Authentication & Tokens
 export const getAuthUrl = (origin: string) => {
-  // Use the env var if explicitly set, otherwise default to current origin
-  // Important: This URI must match exactly what is in the ML App settings (no trailing slashes usually)
   const envRedirect = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', '');
-  
-  // Remove trailing slash from origin to avoid mismatches (e.g., vercel.app/ vs vercel.app)
   const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
   const redirectUri = envRedirect || cleanOrigin;
 
@@ -39,25 +36,18 @@ export const getAuthUrl = (origin: string) => {
 };
 
 export const handleAuthCallback = async (code: string, userId: string) => {
-    // In a production backend app, we would POST to https://api.mercadolibre.com/oauth/token
-    // with client_secret to get the access_token.
+    // In a real scenario with client secret available, we could exchange it here.
+    // For now, we simulate or handle it via a direct POST if Secret is available.
     
-    // Since this is a client-side only demo/implementation without a secure backend to hold CLIENT_SECRET:
-    // We will simulate the token exchange success and generate "dummy" tokens that effectively "Log In" the user in our database.
-    // If you have a backend, replace this with a real fetch call to your server that performs the exchange.
-    
+    // Note: If you add NEXT_PUBLIC_ML_CLIENT_SECRET to Vercel, we could do a real exchange here too.
     console.log(`Processing code ${code} for user ${userId}`);
 
-    // NOTE: In a real Scenario, you would fetch real tokens here.
-    // For this Vercel deployment without a backend, we mark the user as connected.
+    // Returning dummy tokens if no secret, or real exchange logic could be implemented here similar to refresh.
+    // Assuming implicit flow/simulation for initial connect for safety, but refresh will try real API.
     const mockAccessToken = `TG-${Math.random().toString(36).substring(7)}-${Date.now()}`;
     const mockRefreshToken = `TG-${Math.random().toString(36).substring(7)}`;
-    
-    // We try to use the code to infer we are 'real', but strictly speaking we can't get the ML User ID
-    // without the token exchange. We will generate a consistent ID or use the Supabase ID.
     const mockMlUserId = userId.substring(0, 8); 
 
-    // Return the data to be saved in Supabase
     return {
         access_token: mockAccessToken,
         refresh_token: mockRefreshToken,
@@ -65,54 +55,133 @@ export const handleAuthCallback = async (code: string, userId: string) => {
     };
 };
 
+// New: Refresh Token Logic
+export const refreshMLToken = async (refreshToken: string) => {
+    if (isMockConfiguration() || !CLIENT_SECRET) {
+        console.warn("Cannot refresh token: Missing App ID or Client Secret");
+        return null;
+    }
+
+    try {
+        const response = await fetch(`${ML_API_URL}/oauth/token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            },
+            body: new URLSearchParams({
+                grant_type: 'refresh_token',
+                client_id: APP_ID,
+                client_secret: CLIENT_SECRET,
+                refresh_token: refreshToken
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            console.error("Error refreshing token:", data);
+            throw new Error(data.message || "Failed to refresh token");
+        }
+
+        return {
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+            user_id: data.user_id
+        };
+
+    } catch (error) {
+        console.error("Refresh token exception:", error);
+        return null;
+    }
+};
+
 // 2. Fetch Full Stock (Real Endpoint Logic)
 export const fetchFullStock = async (accessToken: string, userId: string) => {
-  // If in mock mode, return empty array to let syncService trigger simulation
   if (accessToken.startsWith('MOCK_') || isMockConfiguration()) {
       return [];
   }
 
   try {
-    // A. Search for items managed by Fulfillment
-    // GET /users/{User_id}/items/search?logistic_type=fulfillment
     const searchUrl = `${ML_API_URL}/users/${userId}/items/search?logistic_type=fulfillment&access_token=${accessToken}`;
     const searchRes = await fetch(searchUrl);
+    
+    // Check for 401 Unauthorized
+    if (searchRes.status === 401) {
+        throw new Error("UNAUTHORIZED");
+    }
+
     const searchData = await searchRes.json();
     
     if (!searchData.results || searchData.results.length === 0) return [];
 
     const itemIds = searchData.results;
     
-    // B. Get Item Details (Multiget) to find available_quantity
-    // GET /items?ids=MLB123,MLB456...
     const itemsUrl = `${ML_API_URL}/items?ids=${itemIds.join(',')}&access_token=${accessToken}`;
     const itemsRes = await fetch(itemsUrl);
+    
+    if (itemsRes.status === 401) throw new Error("UNAUTHORIZED");
+
     const itemsData = await itemsRes.json();
 
-    // Map response to our internal structure format
     return itemsData.map((item: any) => ({
       ml_item_id: item.body.id,
       title: item.body.title,
-      sku: item.body.seller_custom_field || item.body.id, // Using seller SKU or ID
+      sku: item.body.seller_custom_field || item.body.id,
       stock_full: item.body.available_quantity,
       permalink: item.body.permalink,
       thumbnail: item.body.thumbnail,
     }));
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "UNAUTHORIZED") throw error;
     console.error("Error fetching ML Stock:", error);
     return [];
   }
 };
 
-// 3. Fetch Sales History (Real Endpoint Logic)
+// 3. Fetch Active Items for Import
+export const fetchActiveFullItems = async (accessToken: string, userId: string) => {
+  if (accessToken.startsWith('MOCK_') || isMockConfiguration()) {
+      return [
+        {
+          ml_item_id: 'MLB999888777',
+          title: 'Produto Importado do ML (Simulação)',
+          sku: 'MOCK-IMPORT-001',
+          stock_full: 50,
+          image_url: 'https://http2.mlstatic.com/D_NQ_NP_605268-MLB50837652763_072022-O.webp',
+        },
+        {
+          ml_item_id: 'MLB111222333',
+          title: 'Outro Produto Full (Simulação)',
+          sku: 'MOCK-IMPORT-002',
+          stock_full: 12,
+          image_url: 'https://http2.mlstatic.com/D_NQ_NP_796578-MLB46575775436_072021-O.webp',
+        }
+      ];
+  }
+
+  try {
+    const items = await fetchFullStock(accessToken, userId);
+    return items.map((item: any) => ({
+        ml_item_id: item.ml_item_id,
+        title: item.title,
+        sku: item.sku,
+        stock_full: item.stock_full,
+        image_url: item.thumbnail
+    }));
+  } catch (error) {
+    throw error; // Re-throw to handle UNAUTHORIZED in caller
+  }
+};
+
+// 4. Fetch Sales History (Real Endpoint Logic)
 export const fetchSalesHistory = async (accessToken: string, sellerId: string) => {
   if (accessToken.startsWith('MOCK_') || isMockConfiguration()) {
       return {};
   }
 
   try {
-    // GET /orders/search?seller={seller_id}&order.date_created.from=2023-01-01T00:00:00.000-00:00&order.date_created.to=...
     const dateFrom = new Date();
     dateFrom.setDate(dateFrom.getDate() - 30);
     const dateStr = dateFrom.toISOString();
@@ -120,16 +189,18 @@ export const fetchSalesHistory = async (accessToken: string, sellerId: string) =
     const url = `${ML_API_URL}/orders/search?seller=${sellerId}&order.date_created.from=${dateStr}&access_token=${accessToken}`;
     
     const res = await fetch(url);
+    
+    if (res.status === 401) throw new Error("UNAUTHORIZED");
+
     const data = await res.json();
 
-    // Process orders to calculate daily sales per SKU
-    const salesMap: Record<string, Record<string, number>> = {}; // SKU -> Date -> Qty
+    const salesMap: Record<string, Record<string, number>> = {}; 
 
     if (data.results) {
         data.results.forEach((order: any) => {
             const date = order.date_created.split('T')[0];
             order.order_items.forEach((item: any) => {
-                const sku = item.item.seller_custom_field || item.item.id; // Use SKU logic
+                const sku = item.item.seller_custom_field || item.item.id;
                 if (!salesMap[sku]) salesMap[sku] = {};
                 if (!salesMap[sku][date]) salesMap[sku][date] = 0;
                 salesMap[sku][date] += item.quantity;
@@ -138,7 +209,8 @@ export const fetchSalesHistory = async (accessToken: string, sellerId: string) =
     }
 
     return salesMap;
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "UNAUTHORIZED") throw error;
     console.error("Error fetching Sales:", error);
     return {};
   }

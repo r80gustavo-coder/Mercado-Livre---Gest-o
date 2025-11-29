@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -8,7 +9,7 @@ import Settings from './components/Settings';
 import Login from './components/Login';
 import AuthCallback from './components/AuthCallback';
 import { Product, Batch, ViewState, BatchItem, UserSettings, BatchStatus } from './types';
-import { syncMercadoLivreData } from './services/syncService';
+import { syncMercadoLivreData, importProductsFromML } from './services/syncService';
 import { LogOut, Bell, Loader2, AlertTriangle, Terminal } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import * as db from './services/databaseService';
@@ -142,16 +143,24 @@ const App: React.FC = () => {
   const handleSyncML = async () => {
     showNotify('Iniciando sincronização com Mercado Livre...');
     
-    const accessToken = userSettings.is_connected_ml ? 'mock_token' : null; 
+    // Use real tokens if connected, otherwise 'mock_token' fallback for simulation
+    const accessToken = userSettings.is_connected_ml ? (userSettings.ml_access_token || 'mock_token') : null; 
+    const refreshToken = userSettings.ml_refresh_token || null;
     const userId = userSettings.ml_user_id;
 
-    if (!userId) {
+    if (!userId && userSettings.is_connected_ml) {
         showNotify("Erro: ID do usuário ML não encontrado nas configurações.");
         return;
     }
 
     try {
-      const updatedProducts = await syncMercadoLivreData(products, accessToken, userId);
+      const updatedProducts = await syncMercadoLivreData(
+          products, 
+          accessToken, 
+          userId || null, 
+          refreshToken, 
+          session?.user?.id
+      );
       
       // Update DB for each changed product
       for (const p of updatedProducts) {
@@ -160,12 +169,38 @@ const App: React.FC = () => {
          });
       }
 
-      await loadUserData();
+      await loadUserData(); // Reload to get updated user settings (new tokens if refreshed)
       showNotify('Sincronização com Mercado Livre concluída!');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      showNotify('Erro ao sincronizar. Tente novamente.');
+      showNotify(e.message || 'Erro ao sincronizar. Tente novamente.');
     }
+  };
+  
+  const handleImportML = async () => {
+      showNotify('Buscando produtos no Mercado Livre...');
+      const accessToken = userSettings.is_connected_ml ? (userSettings.ml_access_token || 'mock_token') : null; 
+      const refreshToken = userSettings.ml_refresh_token || null;
+      const userId = userSettings.ml_user_id;
+      
+      try {
+          const count = await importProductsFromML(
+              products, 
+              accessToken, 
+              userId || null, 
+              session?.user?.id,
+              refreshToken
+          );
+          if (count > 0) {
+              showNotify(`${count} novos produtos importados!`);
+              await loadUserData();
+          } else {
+              showNotify('Nenhum produto novo encontrado.');
+          }
+      } catch (e: any) {
+          console.error(e);
+          showNotify(e.message || 'Erro ao importar produtos.');
+      }
   };
 
   const handleSaveSettings = async (newSettings: UserSettings) => {
@@ -322,7 +357,7 @@ const App: React.FC = () => {
             <Dashboard products={products} onSync={handleSyncML} />
           )}
           {currentView === ViewState.PRODUCTS && (
-            <ProductList products={products} onAddProduct={handleAddProduct} />
+            <ProductList products={products} onAddProduct={handleAddProduct} onImportML={handleImportML} />
           )}
           {currentView === ViewState.FACTORY && (
             <FactoryControl products={products} onUpdateStock={handleUpdateFactoryStock} />

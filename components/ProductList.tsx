@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { Product } from '../types';
 import { calculateRupture, getStatusColor } from '../services/inventoryService';
-import { Plus, X, Image as ImageIcon } from 'lucide-react';
+import { Plus, X, Image as ImageIcon, DownloadCloud } from 'lucide-react';
 
 interface ProductListProps {
   products: Product[];
   onAddProduct?: (product: Omit<Product, 'id' | 'sales_history' | 'avg_daily_sales' | 'stock_full' | 'stock_scheduled'>) => void;
+  onImportML?: () => void;
 }
 
-const ProductList: React.FC<ProductListProps> = ({ products, onAddProduct }) => {
+const ProductList: React.FC<ProductListProps> = ({ products, onAddProduct, onImportML }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Form State
@@ -42,14 +43,24 @@ const ProductList: React.FC<ProductListProps> = ({ products, onAddProduct }) => 
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800">Produtos</h2>
-        {onAddProduct && (
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-ml-blue text-white rounded-lg hover:opacity-90 transition shadow-sm"
-          >
-            <Plus size={18} /> Novo Produto
-          </button>
-        )}
+        <div className="flex gap-2">
+            {onImportML && (
+                <button
+                    onClick={onImportML}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition shadow-sm"
+                >
+                    <DownloadCloud size={18} /> Importar do ML
+                </button>
+            )}
+            {onAddProduct && (
+            <button 
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-ml-blue text-white rounded-lg hover:opacity-90 transition shadow-sm"
+            >
+                <Plus size={18} /> Novo Produto
+            </button>
+            )}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -199,19 +210,20 @@ const ProductList: React.FC<ProductListProps> = ({ products, onAddProduct }) => 
               </div>
 
               <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-ml-blue text-white rounded-lg hover:opacity-90 transition font-medium shadow-md"
-                >
-                  Salvar Produto
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-ml-blue text-white rounded-lg hover:opacity-90 transition font-medium shadow-md flex justify-center items-center gap-2"
+                  >
+                    <Plus size={18} />
+                    Salvar Produto
+                  </button>
               </div>
             </form>
           </div>

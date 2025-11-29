@@ -1,3 +1,4 @@
+
 import { supabase } from '../lib/supabaseClient';
 import { Product, Batch, UserSettings } from '../types';
 
@@ -55,6 +56,27 @@ export const createProduct = async (userId: string, product: Partial<Product>) =
 
   if (error) throw error;
   return data;
+};
+
+export const bulkCreateProducts = async (userId: string, products: Partial<Product>[]) => {
+  if (products.length === 0) return;
+
+  const productsToInsert = products.map(p => ({
+    user_id: userId,
+    title: p.title,
+    sku: p.sku,
+    cost_per_unit: p.cost_per_unit || 0,
+    stock_factory: p.stock_factory || 0,
+    stock_full: p.stock_full || 0,
+    image_url: p.image_url,
+    full_listing_id: p.ml_item_id
+  }));
+
+  const { error } = await supabase
+    .from('products')
+    .insert(productsToInsert);
+
+  if (error) throw error;
 };
 
 export const updateProductStock = async (productId: string, updates: Partial<Product>) => {
@@ -129,7 +151,7 @@ export const updateBatchStatus = async (batchId: string, status: string, receive
 export const getUserSettings = async (userId: string): Promise<UserSettings> => {
   const { data, error } = await supabase
     .from('users')
-    .select('ml_user_id, ml_access_token, alert_threshold')
+    .select('ml_user_id, ml_access_token, ml_refresh_token, alert_threshold')
     .eq('id', userId)
     .single();
 
@@ -138,6 +160,8 @@ export const getUserSettings = async (userId: string): Promise<UserSettings> => 
   return {
     is_connected_ml: !!data.ml_access_token,
     ml_user_id: data.ml_user_id,
+    ml_access_token: data.ml_access_token,
+    ml_refresh_token: data.ml_refresh_token,
     alert_threshold_days: data.alert_threshold || 5,
     last_sync: undefined 
   };

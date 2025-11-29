@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   sku: string;
@@ -50,6 +51,8 @@ export interface RupturePrediction {
 export interface UserSettings {
   is_connected_ml: boolean;
   ml_user_id?: string;
+  ml_access_token?: string;
+  ml_refresh_token?: string;
   alert_threshold_days: number;
   last_sync?: string;
 }

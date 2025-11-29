@@ -1,4 +1,3 @@
-
 import { Product } from '../types';
 import { fetchFullStock, fetchSalesHistory, fetchActiveFullItems, refreshMLToken } from './mercadolibre';
 import * as db from './databaseService';
@@ -16,10 +15,9 @@ export const syncMercadoLivreData = async (
   dbUserId: string // Added DB User ID for saving tokens
 ): Promise<Product[]> => {
   
-  // 1. Validation
-  if (!accessToken || !userId) {
-    console.warn("Cannot sync: Missing ML credentials");
-    return simulateSync(currentProducts);
+  // 1. Validation STRICT: Se não tiver credenciais, ERRO.
+  if (!accessToken || !userId || accessToken === 'mock_token') {
+    throw new Error("Conta desconectada. Vá em Configurações e conecte sua conta do Mercado Livre.");
   }
 
   try {
@@ -66,6 +64,10 @@ const executeSync = async (products: Product[], token: string, uid: string) => {
       } else {
           mlItem = stockData.find((i: any) => i.sku === product.sku);
       }
+
+      // Merge Sales Data if available (Future improvement)
+      // currently just stocking logic update
+      
       return {
         ...product,
         stock_full: mlItem ? mlItem.stock_full : product.stock_full,
@@ -81,12 +83,15 @@ export const importProductsFromML = async (
     dbUserId: string,
     refreshToken: string | null
 ) => {
-    if (!accessToken || !mlUserId) {
+    if (!accessToken || !mlUserId || accessToken === 'mock_token') {
         throw new Error("Conecte ao Mercado Livre primeiro.");
     }
 
     const executeImport = async (token: string) => {
         const mlItems = await fetchActiveFullItems(token, mlUserId);
+        
+        if (mlItems.length === 0) return 0;
+
         const newItems = mlItems.filter((item: any) => {
             const exists = currentProducts.some(p => 
                 p.sku === item.sku || p.ml_item_id === item.ml_item_id
@@ -125,22 +130,4 @@ export const importProductsFromML = async (
         }
         throw error;
     }
-};
-
-const simulateSync = (products: Product[]): Product[] => {
-  return products.map(p => {
-    const salesChange = Math.random() > 0.6 ? Math.floor(Math.random() * 4) : 0;
-    const newHistory = [...p.sales_history.slice(1)];
-    newHistory.push({
-        date: new Date().toISOString().split('T')[0],
-        quantity: salesChange
-    });
-    const newStockFull = Math.max(0, p.stock_full - salesChange);
-    return {
-      ...p,
-      stock_full: newStockFull,
-      sales_history: newHistory,
-      avg_daily_sales: newHistory.reduce((acc, curr) => acc + curr.quantity, 0) / 30
-    };
-  });
 };

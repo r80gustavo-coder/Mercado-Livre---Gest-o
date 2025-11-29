@@ -12,101 +12,137 @@ const getEnvVar = (key: string, fallback: string) => {
   return fallback;
 };
 
-// LOGIC TO FORCE REAL ID:
-const rawAppId = getEnvVar('NEXT_PUBLIC_ML_APP_ID', '6798471816186732');
-const APP_ID = rawAppId === 'YOUR_APP_ID' ? '6798471816186732' : rawAppId;
-// Client Secret is needed for Refresh Token flow (usually server-side, but used here for SPA architecture)
+// Configurações
+const rawAppId = getEnvVar('NEXT_PUBLIC_ML_APP_ID', '');
+// Se o usuário não configurou nada ou deixou o padrão, assumimos string vazia para forçar erro de config ou modo mock manual
+const APP_ID = rawAppId === 'YOUR_APP_ID' ? '' : rawAppId;
 const CLIENT_SECRET = getEnvVar('NEXT_PUBLIC_ML_CLIENT_SECRET', '');
-
 const ML_API_URL = 'https://api.mercadolibre.com';
 
 // Check if the app is running with default/missing credentials
 export const isMockConfiguration = () => {
-  return !APP_ID || APP_ID === 'YOUR_APP_ID';
+  return !APP_ID;
 };
 
+// --- PKCE HELPERS ---
+
+function generateRandomString(length: number) {
+  const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  let result = '';
+  const values = new Uint32Array(length);
+  crypto.getRandomValues(values);
+  for (let i = 0; i < length; i++) {
+    result += charset[values[i] % charset.length];
+  }
+  return result;
+}
+
+async function sha256(plain: string) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plain);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return hash;
+}
+
+function base64UrlEncode(a: ArrayBuffer) {
+  let str = "";
+  const bytes = new Uint8Array(a);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    str += String.fromCharCode(bytes[i]);
+  }
+  return btoa(str)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
 // 1. Authentication & Tokens
-export const getAuthUrl = (origin: string) => {
+
+export const getAuthUrl = async (origin: string) => {
   const envRedirect = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', '');
   const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
   const redirectUri = envRedirect || cleanOrigin;
 
-  return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${APP_ID}&redirect_uri=${redirectUri}`;
+  // Gerar PKCE Verifier e Challenge
+  const codeVerifier = generateRandomString(128);
+  const hashed = await sha256(codeVerifier);
+  const codeChallenge = base64UrlEncode(hashed);
+
+  // Salvar o verifier para usar no callback
+  localStorage.setItem('ml_code_verifier', codeVerifier);
+
+  return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${APP_ID}&redirect_uri=${redirectUri}&code_challenge=${codeChallenge}&code_challenge_method=S256`;
 };
 
 export const handleAuthCallback = async (code: string, userId: string) => {
-    // If Client Secret is present, we exchange the code for a REAL token.
-    if (CLIENT_SECRET && !isMockConfiguration()) {
-         const envRedirect = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', '');
-         const cleanOrigin = window.location.origin.replace(/\/$/, "");
-         const redirectUri = envRedirect || cleanOrigin;
+    const envRedirect = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', '');
+    const cleanOrigin = window.location.origin.replace(/\/$/, "");
+    const redirectUri = envRedirect || cleanOrigin;
 
-        try {
-            console.log("Exchanging code for REAL token...");
-            const response = await fetch(`${ML_API_URL}/oauth/token`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Accept': 'application/json'
-                },
-                body: new URLSearchParams({
-                    grant_type: 'authorization_code',
-                    client_id: APP_ID,
-                    client_secret: CLIENT_SECRET,
-                    code: code,
-                    redirect_uri: redirectUri
-                })
-            });
+    // Recuperar o Code Verifier salvo antes do redirect
+    const codeVerifier = localStorage.getItem('ml_code_verifier');
 
-            const data = await response.json();
-            
-            if (!response.ok) {
-                console.error("Token Exchange Error:", data);
-                
-                // Tratar erros comuns com mensagens amigáveis
-                let errorMessage = "Falha na conexão com o Mercado Livre.";
-                
-                if (data.error === 'invalid_grant') {
-                    errorMessage = "O código de autorização expirou ou já foi utilizado. Tente conectar novamente.";
-                } else if (data.error === 'invalid_client') {
-                    errorMessage = "Erro de configuração: Client Secret ou App ID inválidos no Vercel.";
-                } else if (data.error === 'redirect_uri_mismatch') {
-                    errorMessage = `Erro de URL: A URL de redirecionamento (${redirectUri}) não coincide com a cadastrada no seu App do Mercado Livre.`;
-                } else if (data.message) {
-                    errorMessage = `Erro do ML: ${data.message}`;
-                }
-
-                throw new Error(errorMessage);
-            }
-            
-            return {
-                access_token: data.access_token,
-                refresh_token: data.refresh_token,
-                user_id: data.user_id?.toString()
-            };
-        } catch (e: any) {
-            console.error("Error in real token exchange:", e);
-            throw e; // Repassa o erro com a mensagem tratada acima
-        }
+    // Se Client Secret ou Verifier estiverem faltando, não conseguimos trocar o token
+    if (!CLIENT_SECRET || !codeVerifier) {
+         if (!CLIENT_SECRET) throw new Error("Client Secret não configurado no Vercel.");
+         if (!codeVerifier) throw new Error("Erro de segurança PKCE: Verifier não encontrado. Tente novamente.");
     }
 
-    // Fallback: Mock Tokens if secret is missing (Safety for generic users)
-    console.log(`Simulating token exchange for code ${code}`);
-    const mockAccessToken = `TG-${Math.random().toString(36).substring(7)}-${Date.now()}`;
-    const mockRefreshToken = `TG-${Math.random().toString(36).substring(7)}`;
-    const mockMlUserId = userId.substring(0, 8); 
+    try {
+        console.log("Exchanging code for REAL token...");
+        
+        // Limpar o storage
+        localStorage.removeItem('ml_code_verifier');
 
-    return {
-        access_token: mockAccessToken,
-        refresh_token: mockRefreshToken,
-        user_id: mockMlUserId
-    };
+        const response = await fetch(`${ML_API_URL}/oauth/token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            },
+            body: new URLSearchParams({
+                grant_type: 'authorization_code',
+                client_id: APP_ID,
+                client_secret: CLIENT_SECRET,
+                code: code,
+                redirect_uri: redirectUri,
+                code_verifier: codeVerifier // PKCE OBRIGATÓRIO
+            })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            console.error("Token Exchange Error:", data);
+            
+            let errorMessage = "Falha na conexão com o Mercado Livre.";
+            
+            if (data.error === 'invalid_grant') {
+                errorMessage = "O código expirou. Tente conectar novamente.";
+            } else if (data.error === 'invalid_client') {
+                errorMessage = "Erro de configuração: Client Secret ou App ID inválidos.";
+            } else if (data.message) {
+                errorMessage = `Erro do ML: ${data.message}`;
+            }
+
+            throw new Error(errorMessage);
+        }
+        
+        return {
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+            user_id: data.user_id?.toString()
+        };
+    } catch (e: any) {
+        console.error("Error in real token exchange:", e);
+        throw e;
+    }
 };
 
-// New: Refresh Token Logic
 export const refreshMLToken = async (refreshToken: string) => {
-    if (isMockConfiguration() || !CLIENT_SECRET) {
-        console.warn("Cannot refresh token: Missing App ID or Client Secret");
+    if (!APP_ID || !CLIENT_SECRET) {
+        console.warn("Cannot refresh token: Missing Credentials");
         return null;
     }
 
@@ -129,7 +165,7 @@ export const refreshMLToken = async (refreshToken: string) => {
 
         if (!response.ok) {
             console.error("Error refreshing token:", data);
-            throw new Error(data.message || "Failed to refresh token");
+            return null; // Retorna null para disparar a desconexão no syncService
         }
 
         return {
@@ -144,17 +180,14 @@ export const refreshMLToken = async (refreshToken: string) => {
     }
 };
 
-// 2. Fetch Full Stock (Real Endpoint Logic)
+// 2. Fetch Full Stock
 export const fetchFullStock = async (accessToken: string, userId: string) => {
-  if (accessToken.startsWith('MOCK_') || isMockConfiguration()) {
-      return [];
-  }
+  if (!accessToken || accessToken === 'mock_token') return [];
 
   try {
     const searchUrl = `${ML_API_URL}/users/${userId}/items/search?logistic_type=fulfillment&access_token=${accessToken}`;
     const searchRes = await fetch(searchUrl);
     
-    // Check for 401 Unauthorized
     if (searchRes.status === 401) {
         throw new Error("UNAUTHORIZED");
     }
@@ -165,7 +198,9 @@ export const fetchFullStock = async (accessToken: string, userId: string) => {
 
     const itemIds = searchData.results;
     
-    const itemsUrl = `${ML_API_URL}/items?ids=${itemIds.join(',')}&access_token=${accessToken}`;
+    // ML limitation: Items API allows up to 20 IDs per request usually, but let's try all or paginate in future
+    // For now taking first 50 just to be safe or join all
+    const itemsUrl = `${ML_API_URL}/items?ids=${itemIds.slice(0,20).join(',')}&attributes=id,title,available_quantity,thumbnail,permalink,seller_custom_field&access_token=${accessToken}`;
     const itemsRes = await fetch(itemsUrl);
     
     if (itemsRes.status === 401) throw new Error("UNAUTHORIZED");
@@ -190,23 +225,8 @@ export const fetchFullStock = async (accessToken: string, userId: string) => {
 
 // 3. Fetch Active Items for Import
 export const fetchActiveFullItems = async (accessToken: string, userId: string) => {
-  if (accessToken.startsWith('MOCK_') || isMockConfiguration()) {
-      return [
-        {
-          ml_item_id: 'MLB999888777',
-          title: 'Produto Importado do ML (Simulação)',
-          sku: 'MOCK-IMPORT-001',
-          stock_full: 50,
-          image_url: 'https://http2.mlstatic.com/D_NQ_NP_605268-MLB50837652763_072022-O.webp',
-        },
-        {
-          ml_item_id: 'MLB111222333',
-          title: 'Outro Produto Full (Simulação)',
-          sku: 'MOCK-IMPORT-002',
-          stock_full: 12,
-          image_url: 'https://http2.mlstatic.com/D_NQ_NP_796578-MLB46575775436_072021-O.webp',
-        }
-      ];
+  if (!accessToken || accessToken === 'mock_token') {
+      throw new Error("Token inválido para importação.");
   }
 
   try {
@@ -219,15 +239,13 @@ export const fetchActiveFullItems = async (accessToken: string, userId: string) 
         image_url: item.thumbnail
     }));
   } catch (error) {
-    throw error; // Re-throw to handle UNAUTHORIZED in caller
+    throw error;
   }
 };
 
-// 4. Fetch Sales History (Real Endpoint Logic)
+// 4. Fetch Sales History
 export const fetchSalesHistory = async (accessToken: string, sellerId: string) => {
-  if (accessToken.startsWith('MOCK_') || isMockConfiguration()) {
-      return {};
-  }
+  if (!accessToken || accessToken === 'mock_token') return {};
 
   try {
     const dateFrom = new Date();

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { UserSettings } from '../types';
 import { Save, ExternalLink, AlertTriangle, CheckCircle, RefreshCw, Copy, Info } from 'lucide-react';
@@ -44,10 +43,15 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
         alert("Modo de Simulação Ativado! (App ID não configurado). Você agora pode testar o dashboard.");
       }
     } else {
-      // REAL MODE: Redirect to Mercado Livre OAuth
-      const url = getAuthUrl(window.location.origin);
-      console.log("Redirecting to:", url);
-      window.location.href = url;
+      // REAL MODE: Redirect to Mercado Livre OAuth with PKCE
+      try {
+        const url = await getAuthUrl(window.location.origin);
+        console.log("Redirecting to:", url);
+        window.location.href = url;
+      } catch (error) {
+          console.error("Failed to generate Auth URL:", error);
+          alert("Erro ao iniciar conexão segura. Verifique o console.");
+      }
     }
   };
 

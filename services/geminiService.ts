@@ -2,22 +2,15 @@ import { GoogleGenAI } from "@google/genai";
 import { Product } from "../types";
 import { calculateRupture } from "./inventoryService";
 
-// Helper to get env vars safely
-const getEnvVar = (key: string) => {
-  if (typeof process !== 'undefined' && process.env && process.env[key]) return process.env[key];
-  // @ts-ignore
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) return import.meta.env[key];
-  return undefined;
-};
-
 export const analyzeStockRisks = async (products: Product[]): Promise<string> => {
-  const apiKey = getEnvVar('API_KEY');
-
-  if (!apiKey) {
-    return "Erro: Chave de API do Gemini não configurada.";
+  // Ensure API Key is present from process.env as per guidelines
+  // Note: process.env is polyfilled in vite.config.ts
+  if (!process.env.API_KEY) {
+    console.warn("Gemini API Key não encontrada.");
+    return "Recurso de IA indisponível no momento (Chave de API não configurada).";
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   // Filter for risky products to save tokens and focus context
   const riskyProducts = products.map(p => {
@@ -60,6 +53,6 @@ export const analyzeStockRisks = async (products: Product[]): Promise<string> =>
     return response.text || "Não foi possível gerar a análise.";
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return "Erro ao conectar com a IA. Tente novamente mais tarde.";
+    return "Erro ao conectar com a IA. Verifique a chave de API.";
   }
 };

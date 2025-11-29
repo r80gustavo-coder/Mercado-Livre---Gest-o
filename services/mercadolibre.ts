@@ -2,13 +2,19 @@ import { Product } from '../types';
 
 /**
  * MERCADO LIVRE API SERVICE
- * In a real Next.js app, these functions should primarily run on the SERVER side 
- * (Server Actions or API Routes) to protect your CLIENT_SECRET and avoid CORS.
  */
 
+// Helper to get env vars safely
+const getEnvVar = (key: string, fallback: string) => {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) return process.env[key];
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) return import.meta.env[key];
+  return fallback;
+};
+
 const ML_API_URL = 'https://api.mercadolibre.com';
-const APP_ID = process.env.NEXT_PUBLIC_ML_APP_ID || 'YOUR_APP_ID';
-const REDIRECT_URI = process.env.NEXT_PUBLIC_ML_REDIRECT_URI || 'http://localhost:3000/api/auth/callback';
+const APP_ID = getEnvVar('NEXT_PUBLIC_ML_APP_ID', 'YOUR_APP_ID');
+const REDIRECT_URI = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', 'http://localhost:3000/api/auth/callback');
 
 // 1. Authentication & Tokens
 export const getAuthUrl = () => {
@@ -66,8 +72,6 @@ export const fetchSalesHistory = async (accessToken: string, sellerId: string) =
     const data = await res.json();
 
     // Process orders to calculate daily sales per SKU
-    // This logic would be complex in real life (handling variations, multiple items per order)
-    // Here is a simplified version:
     const salesMap: Record<string, Record<string, number>> = {}; // SKU -> Date -> Qty
 
     if (data.results) {

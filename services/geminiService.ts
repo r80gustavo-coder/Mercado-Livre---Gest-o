@@ -2,10 +2,22 @@ import { GoogleGenAI } from "@google/genai";
 import { Product } from "../types";
 import { calculateRupture } from "./inventoryService";
 
+// Helper to get env vars safely
+const getEnvVar = (key: string) => {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) return process.env[key];
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) return import.meta.env[key];
+  return undefined;
+};
+
 export const analyzeStockRisks = async (products: Product[]): Promise<string> => {
-  // Initialize Gemini API client directly with the environment variable as per strict guidelines
-  // The API key must be obtained exclusively from process.env.API_KEY
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getEnvVar('API_KEY');
+
+  if (!apiKey) {
+    return "Erro: Chave de API do Gemini não configurada.";
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   // Filter for risky products to save tokens and focus context
   const riskyProducts = products.map(p => {
@@ -22,7 +34,7 @@ export const analyzeStockRisks = async (products: Product[]): Promise<string> =>
   }).filter(p => p.status !== 'HEALTHY');
 
   if (riskyProducts.length === 0) {
-    return "Great news! Your stock health is excellent. No products are currently at risk of rupture in the immediate future.";
+    return "Ótimas notícias! A saúde do seu estoque está excelente. Nenhum produto tem risco iminente de ruptura.";
   }
 
   const prompt = `
@@ -45,9 +57,9 @@ export const analyzeStockRisks = async (products: Product[]): Promise<string> =>
       model: 'gemini-2.5-flash',
       contents: prompt,
     });
-    return response.text || "Could not generate analysis.";
+    return response.text || "Não foi possível gerar a análise.";
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return "Error connecting to AI service. Please try again later.";
+    return "Erro ao conectar com a IA. Tente novamente mais tarde.";
   }
 };

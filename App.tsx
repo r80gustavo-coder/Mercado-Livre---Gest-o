@@ -9,11 +9,55 @@ import Settings from './components/Settings';
 import Login from './components/Login';
 import { Product, Batch, ViewState, BatchItem, UserSettings, BatchStatus } from './types';
 import { syncMercadoLivreData } from './services/syncService';
-import { LogOut, Bell, Loader2 } from 'lucide-react';
-import { supabase } from './lib/supabaseClient';
+import { LogOut, Bell, Loader2, AlertTriangle, Terminal } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import * as db from './services/databaseService';
 
+// --- COMPONENTS FOR SETUP SCREEN ---
+const SetupScreen = () => (
+  <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-4">
+    <div className="max-w-2xl w-full bg-gray-800 rounded-xl shadow-2xl overflow-hidden border border-gray-700">
+      <div className="bg-ml-yellow p-6 flex items-center gap-4">
+        <AlertTriangle className="text-ml-blue h-10 w-10" />
+        <div>
+          <h1 className="text-2xl font-bold text-ml-blue">Configuração Necessária</h1>
+          <p className="text-ml-blue font-medium opacity-90">Variáveis de ambiente não detectadas</p>
+        </div>
+      </div>
+      <div className="p-8 space-y-6">
+        <p className="text-gray-300">
+          O aplicativo não encontrou as chaves de conexão com o Supabase. Para corrigir isso no Vercel ou localmente:
+        </p>
+        
+        <div className="bg-black rounded-lg p-4 font-mono text-sm overflow-x-auto border border-gray-700">
+          <div className="flex items-center gap-2 text-gray-500 mb-2 border-b border-gray-800 pb-2">
+            <Terminal size={14} /> .env.local / Vercel Environment Variables
+          </div>
+          <p className="text-green-400">NEXT_PUBLIC_SUPABASE_URL<span className="text-white">=https://seu-projeto.supabase.co</span></p>
+          <p className="text-green-400">NEXT_PUBLIC_SUPABASE_ANON_KEY<span className="text-white">=sua-chave-anonima-publica</span></p>
+          <p className="text-blue-400">API_KEY<span className="text-white">=(Opcional) Sua chave Google Gemini</span></p>
+        </div>
+
+        <div className="space-y-2">
+            <h3 className="font-bold text-white">Como resolver no Vercel:</h3>
+            <ol className="list-decimal list-inside text-gray-400 space-y-1 ml-2">
+                <li>Vá para o Dashboard do seu projeto no Vercel.</li>
+                <li>Clique em <strong>Settings</strong> &gt; <strong>Environment Variables</strong>.</li>
+                <li>Adicione as chaves listadas acima exatamente com esses nomes.</li>
+                <li>Faça um novo <strong>Redeploy</strong> (ou push no git) para aplicar.</li>
+            </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const App: React.FC = () => {
+  // 0. Safety Check
+  if (!isSupabaseConfigured) {
+    return <SetupScreen />;
+  }
+
   const [session, setSession] = useState<any>(null);
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
   const [loadingData, setLoadingData] = useState(false);
@@ -38,10 +82,12 @@ const App: React.FC = () => {
 
   // 1. Auth Listener
   useEffect(() => {
+    // Check active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
 
+    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -72,7 +118,7 @@ const App: React.FC = () => {
       setUserSettings(fetchedSettings);
     } catch (error) {
       console.error("Error loading data", error);
-      showNotify("Erro ao carregar dados do servidor");
+      showNotify("Erro ao carregar dados. Verifique sua conexão.");
     } finally {
       setLoadingData(false);
     }
@@ -84,40 +130,35 @@ const App: React.FC = () => {
     setCurrentView(ViewState.LOGIN);
     setProducts([]);
     setBatches([]);
+    setUserSettings({ is_connected_ml: false, alert_threshold_days: 5 });
   };
 
   const handleSyncML = async () => {
     showNotify('Iniciando sincronização com Mercado Livre...');
     
-    // In production, this token comes from DB (encrypted)
     const accessToken = userSettings.is_connected_ml ? 'mock_token' : null; 
     const userId = userSettings.ml_user_id;
 
     if (!userId) {
-        showNotify("Erro: ID do usuário ML não encontrado.");
+        showNotify("Erro: ID do usuário ML não encontrado nas configurações.");
         return;
     }
 
     try {
-      // 1. Fetch ML data
       const updatedProducts = await syncMercadoLivreData(products, accessToken, userId);
       
-      // 2. Update DB for each changed product
-      // Optimization: In real app, do bulk upsert
+      // Update DB for each changed product
       for (const p of updatedProducts) {
          await db.updateProductStock(p.id, { 
              stock_full: p.stock_full 
-             // Note: Sales history update would go here
          });
       }
 
-      // 3. Reload state
       await loadUserData();
-      
       showNotify('Sincronização com Mercado Livre concluída!');
     } catch (e) {
       console.error(e);
-      showNotify('Erro ao sincronizar.');
+      showNotify('Erro ao sincronizar. Tente novamente.');
     }
   };
 
@@ -132,13 +173,11 @@ const App: React.FC = () => {
     }
   };
 
-  // Create a new product
   const handleAddProduct = async (newProductData: Omit<Product, 'id' | 'sales_history' | 'avg_daily_sales' | 'stock_full' | 'stock_scheduled'>) => {
     if (!session?.user?.id) return;
     
     try {
-        const newDbProduct = await db.createProduct(session.user.id, newProductData);
-        // Optimistic update or reload
+        await db.createProduct(session.user.id, newProductData);
         await loadUserData();
         showNotify('Produto cadastrado com sucesso!');
     } catch (error) {
@@ -147,11 +186,9 @@ const App: React.FC = () => {
     }
   };
 
-  // Create Shipment
   const handleCreateBatch = async (items: BatchItem[], date: string) => {
     if (!session?.user?.id) return;
 
-    // 1. Validate Stock locally first
     for (const item of items) {
       const product = products.find(p => p.id === item.product_id);
       if (!product || product.stock_factory < item.quantity) {
@@ -161,7 +198,6 @@ const App: React.FC = () => {
     }
 
     try {
-        // 2. Create Batch in DB
         const totalQty = items.reduce((acc, item) => acc + item.quantity, 0);
         const newBatchData: Partial<Batch> = {
             total_quantity: totalQty,
@@ -171,7 +207,6 @@ const App: React.FC = () => {
         };
         await db.createBatch(session.user.id, newBatchData);
 
-        // 3. Update Product Stocks (Factory -> Scheduled)
         for (const item of items) {
             const product = products.find(p => p.id === item.product_id);
             if (product) {
@@ -197,10 +232,8 @@ const App: React.FC = () => {
     if (!batch || batch.status === 'RECEIVED') return;
 
     try {
-        // 1. Update Batch Status
         await db.updateBatchStatus(batchId, 'RECEIVED', new Date().toISOString());
 
-        // 2. Move Scheduled -> Full
         for (const item of batch.items) {
             const product = products.find(p => p.id === item.product_id);
             if (product) {
@@ -221,7 +254,6 @@ const App: React.FC = () => {
   const handleUpdateFactoryStock = async (productId: string, newStock: number) => {
     try {
         await db.updateProductStock(productId, { stock_factory: newStock });
-        // Optimistic update
         setProducts(prev => prev.map(p => 
             p.id === productId ? { ...p, stock_factory: newStock } : p
         ));
@@ -233,7 +265,7 @@ const App: React.FC = () => {
 
   // View Logic
   if (!session) {
-    return <Login onLogin={() => {}} />; // The useEffect will handle session change
+    return <Login onLogin={() => {}} />; 
   }
 
   if (loadingData && products.length === 0) {

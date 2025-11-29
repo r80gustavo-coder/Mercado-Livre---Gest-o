@@ -18,18 +18,51 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setLoading(true);
     setError(null);
 
+    const ADMIN_EMAIL = 'gustavo_benvindo80@hotmail.com';
+
     try {
-      // Apenas login, sem opção de cadastro
-      const { error } = await supabase.auth.signInWithPassword({
+      // 1. Tentar Login normal
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (signInError) {
+        // LÓGICA DE ADMINISTRAÇÃO:
+        // Se for o seu email específico e der erro (provavelmente "Invalid login credentials" pq não existe),
+        // tentamos criar a conta automaticamente nos bastidores.
+        if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+            console.log("Tentando provisionar admin...");
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                email,
+                password,
+            });
+
+            if (!signUpError && signUpData.session) {
+                // Sucesso ao criar e já veio a sessão (login automático)
+                onLogin();
+                return;
+            } else if (!signUpError && !signUpData.session) {
+                // Sucesso ao criar, mas requer confirmação de email (depende da config do Supabase)
+                setError('Conta de administrador criada! Se necessário, verifique seu e-mail para confirmar o cadastro antes de entrar.');
+                return;
+            }
+        }
+        
+        // Se não for o admin ou se falhar a criação, lança o erro original
+        throw signInError;
+      }
+
+      // Sucesso no login normal
       onLogin();
+
     } catch (err: any) {
-      setError('Falha no login: Verifique se o usuário existe ou a senha está correta.');
       console.error(err);
+      if (err.message === 'Invalid login credentials') {
+         setError('Email ou senha incorretos.');
+      } else {
+         setError(err.message || 'Erro ao conectar.');
+      }
     } finally {
       setLoading(false);
     }
@@ -59,7 +92,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 block w-full border-gray-300 rounded-lg border p-2.5 focus:ring-ml-blue focus:border-ml-blue transition outline-none bg-gray-50"
-                  placeholder="seu@email.com"
+                  placeholder="Digite seu email"
                   required
                 />
               </div>
@@ -76,14 +109,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 block w-full border-gray-300 rounded-lg border p-2.5 focus:ring-ml-blue focus:border-ml-blue transition outline-none bg-gray-50"
-                  placeholder="••••••••"
+                  placeholder="Digite sua senha"
                   required
                 />
               </div>
             </div>
 
             {error && (
-              <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">
+              <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded border border-red-100">
                 {error}
               </div>
             )}
@@ -93,12 +126,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               disabled={loading}
               className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-ml-blue hover:bg-[#232766] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ml-blue transition"
             >
-              {loading ? 'Entrando...' : 'Entrar no Sistema'}
+              {loading ? 'Verificando...' : 'Acessar Sistema'}
             </button>
           </form>
           
           <div className="mt-6 text-center text-xs text-gray-400">
-            <p>Acesso exclusivo para administradores.</p>
+            <p>Sistema exclusivo de gestão.</p>
           </div>
         </div>
       </div>

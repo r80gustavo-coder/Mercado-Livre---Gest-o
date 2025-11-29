@@ -1,0 +1,5 @@
+{
+  "name": "FullStock Control",
+  "description": "A comprehensive inventory management system for Mercado Livre Full sellers. Tracks factory stock, Full fulfillment centers, shipments, and predicts stock ruptures.",
+  "requestFramePermissions": []
+}

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { UserSettings } from '../types';
 import { Save, ExternalLink, AlertTriangle, CheckCircle, RefreshCw, Copy, Info } from 'lucide-react';
@@ -114,14 +115,14 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
 
         {/* Debug / Configuration Info */}
         {!settings.is_connected_ml && !isMockConfiguration() && (
-            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                     <Info size={16} className="text-yellow-700" />
                     <h4 className="text-sm font-bold text-yellow-800">ATENÇÃO: Configuração Necessária</h4>
                 </div>
-                <p className="text-xs text-yellow-800 mb-3">
-                    Para evitar o erro "Não foi possível conectar", você deve copiar o link abaixo e colar EXATAMENTE igual no campo 
-                    <strong> Redirect URI</strong> dentro do <a href="https://developers.mercadolibre.com.br/devcenter" target="_blank" className="underline font-bold">Painel do Desenvolvedor do Mercado Livre</a>.
+                
+                <p className="text-xs text-yellow-800">
+                    1. Copie o link abaixo e cole EXATAMENTE igual no campo <strong>Redirect URI</strong> dentro do <a href="https://developers.mercadolibre.com.br/devcenter" target="_blank" className="underline font-bold">DevCenter do ML</a>.
                 </p>
                 <div className="flex items-center gap-2">
                     <code className="flex-1 bg-white border border-yellow-300 p-2 rounded text-xs text-gray-700 break-all font-mono">
@@ -135,6 +136,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
                         <Copy size={16} />
                     </button>
                 </div>
+
+                <p className="text-xs text-yellow-800 border-t border-yellow-200 pt-3">
+                    2. Para que a conta permaneça conectada, você precisa configurar o <strong>Client Secret</strong> no Vercel.
+                    <br/>
+                    Variável: <code>NEXT_PUBLIC_ML_CLIENT_SECRET</code>
+                </p>
             </div>
         )}
       </div>

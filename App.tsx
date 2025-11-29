@@ -37,6 +37,8 @@ const SetupScreen = () => (
           <p className="text-green-400">NEXT_PUBLIC_SUPABASE_URL<span className="text-white">=https://seu-projeto.supabase.co</span></p>
           <p className="text-green-400">NEXT_PUBLIC_SUPABASE_ANON_KEY<span className="text-white">=sua-chave-anonima-publica</span></p>
           <p className="text-blue-400">API_KEY<span className="text-white">=(Opcional) Sua chave Google Gemini</span></p>
+          <p className="text-blue-400">NEXT_PUBLIC_ML_APP_ID<span className="text-white">=(Opcional) ID do App ML</span></p>
+          <p className="text-blue-400">NEXT_PUBLIC_ML_CLIENT_SECRET<span className="text-white">=(Opcional) Secret Key do ML</span></p>
         </div>
 
         <div className="space-y-2">

@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 
 // Helper function to safely get environment variables in Vite/Vercel
@@ -15,7 +16,7 @@ const getEnvVar = (key: string): string | undefined => {
   return undefined;
 };
 
-// Tenta ler do ambiente, se não achar, usa a chave fornecida diretamente (Hardcoded fallback)
+// Tenta ler do ambiente, se não achar, usa a chave fornecida diretamente (Hardcoded fallback for reliability)
 const supabaseUrl = getEnvVar('NEXT_PUBLIC_SUPABASE_URL') || 'https://qnjoldrxdtnbzjlbtphu.supabase.co';
 const supabaseAnonKey = getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFuam9sZHJ4ZHRuYnpqbGJ0cGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MDMwMDEsImV4cCI6MjA3OTk3OTAwMX0.-2XPSO6lgMrz5Zmf_iJYQ1aITj2ViBSE31kSBGiuH-I';
 

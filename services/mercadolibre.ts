@@ -36,14 +36,48 @@ export const getAuthUrl = (origin: string) => {
 };
 
 export const handleAuthCallback = async (code: string, userId: string) => {
-    // In a real scenario with client secret available, we could exchange it here.
-    // For now, we simulate or handle it via a direct POST if Secret is available.
-    
-    // Note: If you add NEXT_PUBLIC_ML_CLIENT_SECRET to Vercel, we could do a real exchange here too.
-    console.log(`Processing code ${code} for user ${userId}`);
+    // If Client Secret is present, we exchange the code for a REAL token.
+    if (CLIENT_SECRET && !isMockConfiguration()) {
+         const envRedirect = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', '');
+         const cleanOrigin = window.location.origin.replace(/\/$/, "");
+         const redirectUri = envRedirect || cleanOrigin;
 
-    // Returning dummy tokens if no secret, or real exchange logic could be implemented here similar to refresh.
-    // Assuming implicit flow/simulation for initial connect for safety, but refresh will try real API.
+        try {
+            console.log("Exchanging code for REAL token...");
+            const response = await fetch(`${ML_API_URL}/oauth/token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                body: new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    client_id: APP_ID,
+                    client_secret: CLIENT_SECRET,
+                    code: code,
+                    redirect_uri: redirectUri
+                })
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                console.error("Token Exchange Error:", data);
+                throw new Error(data.message || "Failed to exchange token");
+            }
+            
+            return {
+                access_token: data.access_token,
+                refresh_token: data.refresh_token,
+                user_id: data.user_id?.toString()
+            };
+        } catch (e) {
+            console.error("Error in real token exchange:", e);
+            throw e;
+        }
+    }
+
+    // Fallback: Mock Tokens if secret is missing (Safety for generic users)
+    console.log(`Simulating token exchange for code ${code}`);
     const mockAccessToken = `TG-${Math.random().toString(36).substring(7)}-${Date.now()}`;
     const mockRefreshToken = `TG-${Math.random().toString(36).substring(7)}`;
     const mockMlUserId = userId.substring(0, 8); 

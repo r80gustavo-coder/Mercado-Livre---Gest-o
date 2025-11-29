@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { handleAuthCallback } from '../services/mercadolibre';

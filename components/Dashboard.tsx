@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { Product } from '../types';
 import { calculateRupture, getStatusColor } from '../services/inventoryService';
 import { AlertTriangle, TrendingUp, Package, Archive, RefreshCw, Wand2, Factory } from 'lucide-react';
@@ -13,6 +14,16 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ products, onSync }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+
+  // Auto-sync effect: runs every 10 minutes (600000ms)
+  useEffect(() => {
+    const interval = setInterval(() => {
+        console.log("Auto-syncing Mercado Livre data...");
+        onSync();
+    }, 600000); 
+
+    return () => clearInterval(interval);
+  }, [onSync]);
 
   const totalFull = products.reduce((acc, p) => acc + p.stock_full, 0);
   const totalFactory = products.reduce((acc, p) => acc + p.stock_factory, 0);

@@ -12,20 +12,29 @@ const getEnvVar = (key: string, fallback: string) => {
   return fallback;
 };
 
-// Updated with your Real App ID
-const APP_ID = getEnvVar('NEXT_PUBLIC_ML_APP_ID', '6798471816186732');
+// LOGIC TO FORCE REAL ID:
+// If the env var is set to the old placeholder "YOUR_APP_ID", we ignore it and use your real ID.
+const rawAppId = getEnvVar('NEXT_PUBLIC_ML_APP_ID', '6798471816186732');
+const APP_ID = rawAppId === 'YOUR_APP_ID' ? '6798471816186732' : rawAppId;
+
 const ML_API_URL = 'https://api.mercadolibre.com';
 
 // Check if the app is running with default/missing credentials
 export const isMockConfiguration = () => {
-  return APP_ID === 'YOUR_APP_ID' || !APP_ID;
+  // Only mock if ID is specifically missing or explicitly set to a mock string (which shouldn't happen now)
+  return !APP_ID || APP_ID === 'YOUR_APP_ID';
 };
 
 // 1. Authentication & Tokens
 export const getAuthUrl = (origin: string) => {
   // Use the env var if explicitly set, otherwise default to current origin
-  // Important: This URI must match exactly what is in the ML App settings
-  const redirectUri = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', origin);
+  // Important: This URI must match exactly what is in the ML App settings (no trailing slashes usually)
+  const envRedirect = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', '');
+  
+  // Remove trailing slash from origin to avoid mismatches (e.g., vercel.app/ vs vercel.app)
+  const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+  const redirectUri = envRedirect || cleanOrigin;
+
   return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${APP_ID}&redirect_uri=${redirectUri}`;
 };
 

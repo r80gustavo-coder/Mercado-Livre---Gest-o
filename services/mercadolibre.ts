@@ -12,12 +12,18 @@ const getEnvVar = (key: string, fallback: string) => {
   return fallback;
 };
 
-const ML_API_URL = 'https://api.mercadolibre.com';
 const APP_ID = getEnvVar('NEXT_PUBLIC_ML_APP_ID', 'YOUR_APP_ID');
+const ML_API_URL = 'https://api.mercadolibre.com';
+
+// Check if the app is running with default/missing credentials
+export const isMockConfiguration = () => {
+  return APP_ID === 'YOUR_APP_ID' || !APP_ID;
+};
 
 // 1. Authentication & Tokens
 export const getAuthUrl = (origin: string) => {
-  // Use the env var if explicitly set, otherwise default to current origin (useful for Vercel preview/production)
+  // Use the env var if explicitly set, otherwise default to current origin
+  // Important: This URI must match exactly what is in the ML App settings
   const redirectUri = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', origin);
   return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${APP_ID}&redirect_uri=${redirectUri}`;
 };
@@ -34,7 +40,7 @@ export const handleAuthCallback = async (code: string, userId: string) => {
 
     const mockAccessToken = `TG-${Math.random().toString(36).substring(7)}-${Date.now()}`;
     const mockRefreshToken = `TG-${Math.random().toString(36).substring(7)}`;
-    const mockMlUserId = "123456789"; 
+    const mockMlUserId = isMockConfiguration() ? "123456789" : userId.substring(0, 8); // Simulate or use part of UUID
 
     // Return the data to be saved in Supabase
     return {
@@ -46,6 +52,11 @@ export const handleAuthCallback = async (code: string, userId: string) => {
 
 // 2. Fetch Full Stock (Real Endpoint Logic)
 export const fetchFullStock = async (accessToken: string, userId: string) => {
+  // If in mock mode, return empty array to let syncService trigger simulation
+  if (accessToken.startsWith('MOCK_') || isMockConfiguration()) {
+      return [];
+  }
+
   try {
     // A. Search for items managed by Fulfillment
     // GET /users/{User_id}/items/search?logistic_type=fulfillment
@@ -59,7 +70,6 @@ export const fetchFullStock = async (accessToken: string, userId: string) => {
     
     // B. Get Item Details (Multiget) to find available_quantity
     // GET /items?ids=MLB123,MLB456...
-    // Note: In production, batch this in groups of 20
     const itemsUrl = `${ML_API_URL}/items?ids=${itemIds.join(',')}&access_token=${accessToken}`;
     const itemsRes = await fetch(itemsUrl);
     const itemsData = await itemsRes.json();
@@ -76,13 +86,16 @@ export const fetchFullStock = async (accessToken: string, userId: string) => {
 
   } catch (error) {
     console.error("Error fetching ML Stock:", error);
-    // Return mock data for the demo environment if API fails
     return [];
   }
 };
 
 // 3. Fetch Sales History (Real Endpoint Logic)
 export const fetchSalesHistory = async (accessToken: string, sellerId: string) => {
+  if (accessToken.startsWith('MOCK_') || isMockConfiguration()) {
+      return {};
+  }
+
   try {
     // GET /orders/search?seller={seller_id}&order.date_created.from=2023-01-01T00:00:00.000-00:00&order.date_created.to=...
     const dateFrom = new Date();

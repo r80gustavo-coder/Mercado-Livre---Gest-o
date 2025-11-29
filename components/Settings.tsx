@@ -1,8 +1,9 @@
-
 import React, { useState } from 'react';
 import { UserSettings } from '../types';
-import { Save, ExternalLink, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
-import { getAuthUrl } from '../services/mercadolibre';
+import { Save, ExternalLink, AlertTriangle, CheckCircle, RefreshCw, Copy } from 'lucide-react';
+import { getAuthUrl, isMockConfiguration } from '../services/mercadolibre';
+import { updateUserTokens } from '../services/databaseService';
+import { supabase } from '../lib/supabaseClient';
 
 interface SettingsProps {
   settings: UserSettings;
@@ -12,10 +13,10 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
   const [threshold, setThreshold] = useState(settings.alert_threshold_days);
   const [isSaving, setIsSaving] = useState(false);
+  const [redirectUri] = useState(window.location.origin);
 
   const handleSave = () => {
     setIsSaving(true);
-    // Simulate API call to save to Supabase
     setTimeout(() => {
       onSaveSettings({
         ...settings,
@@ -25,12 +26,28 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
     }, 800);
   };
 
-  const handleConnect = () => {
-    // Generate Auth URL based on current window location
-    const url = getAuthUrl(window.location.origin);
-    
-    // Redirect user to Mercado Livre Auth
-    window.location.href = url;
+  const handleConnect = async () => {
+    if (isMockConfiguration()) {
+      // MOCK MODE: Simulate immediate connection without redirecting to ML
+      // This prevents the 403 error for users who haven't set up the App ID yet
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const mockUserId = "123456789";
+        const mockToken = "MOCK_TOKEN_" + Date.now();
+        await updateUserTokens(session.user.id, mockUserId, mockToken, "MOCK_REFRESH");
+        
+        onSaveSettings({
+            ...settings,
+            is_connected_ml: true,
+            ml_user_id: mockUserId
+        });
+        alert("Modo de Simulação Ativado! (App ID não configurado). Você agora pode testar o dashboard.");
+      }
+    } else {
+      // REAL MODE: Redirect to Mercado Livre OAuth
+      const url = getAuthUrl(window.location.origin);
+      window.location.href = url;
+    }
   };
 
   return (
@@ -56,7 +73,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
                         <div>
                             <p className="font-bold text-green-900">Conta Sincronizada</p>
                             <p className="text-sm text-green-700 mt-1">
-                                ID do Usuário: {settings.ml_user_id || '123456789'}
+                                ID do Usuário: {settings.ml_user_id || '---'}
                                 <br />
                                 Última sincronização: {settings.last_sync || 'Agora mesmo'}
                             </p>
@@ -94,6 +111,29 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
                 )}
             </div>
         </div>
+
+        {/* Debug / Configuration Info */}
+        {!settings.is_connected_ml && !isMockConfiguration() && (
+            <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <h4 className="text-sm font-bold text-gray-800 mb-2">Configuração de Desenvolvedor (Obrigatório)</h4>
+                <p className="text-xs text-gray-500 mb-2">
+                    Copie a URL abaixo e cole no campo "Redirect URI" nas configurações do seu aplicativo no 
+                    <a href="https://developers.mercadolibre.com.br/devcenter" target="_blank" className="text-blue-600 hover:underline mx-1">DevCenter do Mercado Livre</a>.
+                </p>
+                <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-white border border-gray-300 p-2 rounded text-xs text-gray-600 break-all">
+                        {redirectUri}
+                    </code>
+                    <button 
+                        onClick={() => navigator.clipboard.writeText(redirectUri)}
+                        className="p-2 text-gray-500 hover:text-blue-600"
+                        title="Copiar URL"
+                    >
+                        <Copy size={16} />
+                    </button>
+                </div>
+            </div>
+        )}
       </div>
 
       {/* Preferences Card */}

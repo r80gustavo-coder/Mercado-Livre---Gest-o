@@ -7,10 +7,11 @@ interface LoginProps {
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // Credenciais fixas conforme solicitado
+  const [email, setEmail] = useState('gustavo_benvindo80@hotmail.com');
+  const [password, setPassword] = useState('Gustavor80@');
+  
   const [loading, setLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -19,24 +20,17 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
-        alert('Cadastro realizado! Verifique seu email ou faça login.');
-        setIsSignUp(false);
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-        onLogin();
-      }
+      // Apenas login, sem opção de cadastro
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+      onLogin();
     } catch (err: any) {
-      setError(err.message || 'Erro ao realizar autenticação');
+      setError('Falha no login: Verifique se o usuário existe ou a senha está correta.');
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -50,7 +44,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <span className="text-3xl font-bold text-ml-blue">F</span>
           </div>
           <h1 className="text-2xl font-bold text-ml-blue">FullStock Control</h1>
-          <p className="text-ml-blue/80 font-medium">Gestão Inteligente para ML Full</p>
+          <p className="text-ml-blue/80 font-medium">Acesso Restrito</p>
         </div>
         
         <div className="p-8">
@@ -65,7 +59,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 block w-full border-gray-300 rounded-lg border p-2.5 focus:ring-ml-blue focus:border-ml-blue transition outline-none"
+                  className="pl-10 block w-full border-gray-300 rounded-lg border p-2.5 focus:ring-ml-blue focus:border-ml-blue transition outline-none bg-gray-50"
                   placeholder="seu@email.com"
                   required
                 />
@@ -82,7 +76,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 block w-full border-gray-300 rounded-lg border p-2.5 focus:ring-ml-blue focus:border-ml-blue transition outline-none"
+                  className="pl-10 block w-full border-gray-300 rounded-lg border p-2.5 focus:ring-ml-blue focus:border-ml-blue transition outline-none bg-gray-50"
                   placeholder="••••••••"
                   required
                 />
@@ -100,17 +94,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               disabled={loading}
               className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-ml-blue hover:bg-[#232766] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ml-blue transition"
             >
-              {loading ? 'Processando...' : (isSignUp ? 'Cadastrar' : 'Entrar')}
+              {loading ? 'Entrando...' : 'Entrar no Sistema'}
             </button>
           </form>
           
-          <div className="mt-6 text-center text-sm">
-            <button 
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="text-ml-blue hover:underline"
-            >
-              {isSignUp ? 'Já tem conta? Faça Login' : 'Não tem conta? Cadastre-se'}
-            </button>
+          <div className="mt-6 text-center text-xs text-gray-400">
+            <p>Acesso exclusivo para administradores.</p>
           </div>
         </div>
       </div>

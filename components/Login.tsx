@@ -7,9 +7,8 @@ interface LoginProps {
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  // Credenciais fixas conforme solicitado
-  const [email, setEmail] = useState('gustavo_benvindo80@hotmail.com');
-  const [password, setPassword] = useState('Gustavor80@');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

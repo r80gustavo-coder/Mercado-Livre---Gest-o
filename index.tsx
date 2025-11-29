@@ -18,10 +18,18 @@ interface ErrorBoundaryState {
 
 // Error Boundary Simples para Capturar Erros de JS na UI
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = {
-    hasError: false,
-    error: null
-  };
+  public props: ErrorBoundaryProps;
+
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.props = props;
+    this.state = {
+      hasError: false,
+      error: null
+    };
+  }
+
+  public state: ErrorBoundaryState;
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };

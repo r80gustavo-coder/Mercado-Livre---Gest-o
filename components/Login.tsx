@@ -10,7 +10,6 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,16 +21,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     const ADMIN_EMAIL = 'gustavo_benvindo80@hotmail.com';
 
     try {
-      // 1. Tentar Login normal
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (signInError) {
-        // LÓGICA DE ADMINISTRAÇÃO:
-        // Se for o seu email específico e der erro (provavelmente "Invalid login credentials" pq não existe),
-        // tentamos criar a conta automaticamente nos bastidores.
+        // Auto-provision admin if login fails
         if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
             console.log("Tentando provisionar admin...");
             const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
@@ -40,25 +36,18 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             });
 
             if (!signUpError && signUpData.session) {
-                // Sucesso ao criar e já veio a sessão (login automático)
                 onLogin();
                 return;
             } else if (!signUpError && !signUpData.session) {
-                // Sucesso ao criar, mas requer confirmação de email (depende da config do Supabase)
-                setError('Conta de administrador criada! Se necessário, verifique seu e-mail para confirmar o cadastro antes de entrar.');
+                setError('Conta de administrador criada! Se necessário, confirme o e-mail.');
                 return;
             }
         }
-        
-        // Se não for o admin ou se falhar a criação, lança o erro original
         throw signInError;
       }
-
-      // Sucesso no login normal
       onLogin();
 
     } catch (err: any) {
-      console.error(err);
       if (err.message === 'Invalid login credentials') {
          setError('Email ou senha incorretos.');
       } else {
@@ -125,15 +114,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-ml-blue hover:bg-[#232766] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ml-blue transition"
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-ml-blue hover:bg-[#232766] transition"
             >
               {loading ? 'Verificando...' : 'Acessar Sistema'}
             </button>
           </form>
-          
-          <div className="mt-6 text-center text-xs text-gray-400">
-            <p>Sistema exclusivo de gestão.</p>
-          </div>
         </div>
       </div>
     </div>

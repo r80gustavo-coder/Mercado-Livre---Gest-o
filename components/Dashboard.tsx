@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Product } from '../types';
-import { calculateRupture, getStatusColor } from '../services/inventoryService';
-import { AlertTriangle, TrendingUp, Package, Archive, RefreshCw, Wand2, Factory } from 'lucide-react';
+import { calculateRupture } from '../services/inventoryService';
+import { AlertTriangle, TrendingUp, Package, RefreshCw, Wand2, Factory } from 'lucide-react';
 import SalesChart from './SalesChart';
 import { analyzeStockRisks } from '../services/geminiService';
 
@@ -142,13 +142,11 @@ const Dashboard: React.FC<DashboardProps> = ({ products, onSync }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Sales Chart */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
           <h3 className="text-lg font-bold text-gray-800 mb-4">Vendas - Últimos 30 Dias</h3>
           <SalesChart products={products} />
         </div>
 
-        {/* Alerts List */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-gray-800 mb-4">Alertas de Ruptura</h3>
           <div className="space-y-3">

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -7,7 +8,7 @@ import BatchManager from './components/BatchManager';
 import Settings from './components/Settings';
 import Login from './components/Login';
 import AuthCallback from './components/AuthCallback';
-import { Product, Batch, ViewState, BatchItem, UserSettings, BatchStatus } from './types';
+import { Product, Batch, ViewState, BatchItem, UserSettings } from './types';
 import { syncMercadoLivreData, importProductsFromML } from './services/syncService';
 import { LogOut, Bell, Loader2, AlertTriangle, Terminal } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -35,19 +36,8 @@ const SetupScreen = () => (
           </div>
           <p className="text-green-400">NEXT_PUBLIC_SUPABASE_URL<span className="text-white">=https://seu-projeto.supabase.co</span></p>
           <p className="text-green-400">NEXT_PUBLIC_SUPABASE_ANON_KEY<span className="text-white">=sua-chave-anonima-publica</span></p>
-          <p className="text-blue-400">API_KEY<span className="text-white">=(Opcional) Sua chave Google Gemini</span></p>
           <p className="text-blue-400">NEXT_PUBLIC_ML_APP_ID<span className="text-white">=(Opcional) ID do App ML</span></p>
-          <p className="text-blue-400">NEXT_PUBLIC_ML_CLIENT_SECRET<span className="text-white">=(Opcional) Secret Key do ML</span></p>
-        </div>
-
-        <div className="space-y-2">
-            <h3 className="font-bold text-white">Como resolver no Vercel:</h3>
-            <ol className="list-decimal list-inside text-gray-400 space-y-1 ml-2">
-                <li>Vá para o Dashboard do seu projeto no Vercel.</li>
-                <li>Clique em <strong>Settings</strong> &gt; <strong>Environment Variables</strong>.</li>
-                <li>Adicione as chaves listadas acima exatamente com esses nomes.</li>
-                <li>Faça um novo <strong>Redeploy</strong> (ou push no git) para aplicar.</li>
-            </ol>
+          <p className="text-blue-400">NEXT_PUBLIC_ML_CLIENT_SECRET<span className="text-white">=(Obrigatório para login real)</span></p>
         </div>
       </div>
     </div>
@@ -84,18 +74,15 @@ const App: React.FC = () => {
 
   // 1. Auth Listener
   useEffect(() => {
-    // Check url for OAuth callback
     const params = new URLSearchParams(window.location.search);
-    if (params.get('code')) {
+    if (params.get('code') || params.get('error')) {
       setCurrentView(ViewState.CALLBACK);
     }
 
-    // Check active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
 
-    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -105,11 +92,10 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Data Fetching and Realtime Logic
+  // 2. Data Fetching
   const loadUserData = useCallback(async () => {
     if (!session?.user?.id) return;
     
-    // Don't set loading true if we already have data (for background refresh)
     if (products.length === 0) setLoadingData(true);
 
     try {
@@ -123,31 +109,29 @@ const App: React.FC = () => {
       setUserSettings(fetchedSettings);
     } catch (error) {
       console.error("Error loading data", error);
-      showNotify("Erro ao carregar dados. Verifique sua conexão.");
+      showNotify("Erro ao carregar dados.");
     } finally {
       setLoadingData(false);
     }
-  }, [session?.user?.id]); // Only recreate if user changes
+  }, [session?.user?.id]);
 
-  // Initial Load
   useEffect(() => {
     if (session?.user && currentView !== ViewState.CALLBACK) {
       loadUserData();
     }
   }, [session, currentView, loadUserData]);
 
-  // Realtime Subscription
+  // 3. Realtime Subscription
   useEffect(() => {
     if (!session?.user?.id) return;
 
-    // Use a debounce to prevent spamming refreshes
     let debounceTimer: any;
     const refreshData = () => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            console.log("Realtime update detected. Refreshing data...");
+            console.log("Realtime update detected.");
             loadUserData();
-        }, 1000);
+        }, 1500); // 1.5s debounce
     };
 
     const productSub = supabase
@@ -176,14 +160,17 @@ const App: React.FC = () => {
   };
 
   const handleSyncML = async () => {
-    showNotify('Iniciando sincronização com Mercado Livre...');
+    showNotify('Sincronizando Mercado Livre...');
     
-    const accessToken = userSettings.is_connected_ml ? (userSettings.ml_access_token || 'mock_token') : null; 
-    const refreshToken = userSettings.ml_refresh_token || null;
-    const userId = userSettings.ml_user_id;
+    // Refresh user settings to ensure we have latest token
+    const currentSettings = await db.getUserSettings(session?.user?.id);
+    
+    const accessToken = currentSettings.is_connected_ml ? (currentSettings.ml_access_token || 'mock_token') : null; 
+    const refreshToken = currentSettings.ml_refresh_token || null;
+    const userId = currentSettings.ml_user_id;
 
-    if (!userId && userSettings.is_connected_ml) {
-        showNotify("Erro: ID do usuário ML não encontrado nas configurações.");
+    if (!userId && currentSettings.is_connected_ml) {
+        showNotify("Erro: ID de usuário ML não encontrado.");
         return;
     }
 
@@ -196,43 +183,36 @@ const App: React.FC = () => {
           session?.user?.id
       );
       
-      // Update DB for each changed product in PARALLEL for performance
+      // Update DB
       await Promise.all(updatedProducts.map(p => 
          db.updateProductStock(p.id, { stock_full: p.stock_full })
       ));
 
-      // Note: We don't need to call loadUserData() here because Realtime listener will catch the DB updates!
-      showNotify('Sincronização com Mercado Livre concluída!');
+      showNotify('Sincronização concluída!');
     } catch (e: any) {
       console.error(e);
-      showNotify(e.message || 'Erro ao sincronizar. Tente novamente.');
-      await loadUserData(); // Reload manual in case of error/token refresh state change
+      showNotify(e.message || 'Erro ao sincronizar.');
+      // Reload in case token state changed
+      await loadUserData(); 
     }
   };
   
   const handleImportML = async () => {
-      showNotify('Buscando produtos no Mercado Livre...');
-      const accessToken = userSettings.is_connected_ml ? (userSettings.ml_access_token || 'mock_token') : null; 
-      const refreshToken = userSettings.ml_refresh_token || null;
-      const userId = userSettings.ml_user_id;
+      showNotify('Buscando produtos...');
+      const currentSettings = await db.getUserSettings(session?.user?.id);
       
       try {
           const count = await importProductsFromML(
               products, 
-              accessToken, 
-              userId || null, 
+              currentSettings.ml_access_token || null, 
+              currentSettings.ml_user_id || null, 
               session?.user?.id,
-              refreshToken
+              currentSettings.ml_refresh_token || null
           );
-          if (count > 0) {
-              showNotify(`${count} novos produtos importados!`);
-              // Realtime will pick up the inserts
-          } else {
-              showNotify('Nenhum produto novo encontrado.');
-          }
+          if (count > 0) showNotify(`${count} produtos importados!`);
+          else showNotify('Nenhum produto novo.');
       } catch (e: any) {
-          console.error(e);
-          showNotify(e.message || 'Erro ao importar produtos.');
+          showNotify(e.message || 'Erro ao importar.');
       }
   };
 
@@ -243,33 +223,22 @@ const App: React.FC = () => {
         setUserSettings(newSettings);
         showNotify('Configurações salvas.');
     } catch (error) {
-        showNotify('Erro ao salvar configurações.');
+        showNotify('Erro ao salvar.');
     }
   };
 
   const handleAddProduct = async (newProductData: Omit<Product, 'id' | 'sales_history' | 'avg_daily_sales' | 'stock_full' | 'stock_scheduled'>) => {
     if (!session?.user?.id) return;
-    
     try {
         await db.createProduct(session.user.id, newProductData);
-        showNotify('Produto cadastrado com sucesso!');
+        showNotify('Produto cadastrado!');
     } catch (error) {
-        console.error(error);
         showNotify('Erro ao criar produto.');
     }
   };
 
   const handleCreateBatch = async (items: BatchItem[], date: string) => {
     if (!session?.user?.id) return;
-
-    for (const item of items) {
-      const product = products.find(p => p.id === item.product_id);
-      if (!product || product.stock_factory < item.quantity) {
-        showNotify(`Erro: Estoque insuficiente para ${item.product_title}`);
-        return;
-      }
-    }
-
     try {
         const totalQty = items.reduce((acc, item) => acc + item.quantity, 0);
         const newBatchData: Partial<Batch> = {
@@ -280,6 +249,7 @@ const App: React.FC = () => {
         };
         await db.createBatch(session.user.id, newBatchData);
 
+        // Update local stock
         for (const item of items) {
             const product = products.find(p => p.id === item.product_id);
             if (product) {
@@ -289,23 +259,18 @@ const App: React.FC = () => {
                 });
             }
         }
-
-        showNotify('Envio criado! Estoque atualizado.');
+        showNotify('Envio criado!');
         setCurrentView(ViewState.BATCHES);
-
     } catch (error) {
-        console.error(error);
-        showNotify('Erro ao processar envio.');
+        showNotify('Erro ao criar envio.');
     }
   };
 
   const handleReceiveBatch = async (batchId: string) => {
     const batch = batches.find(b => b.id === batchId);
     if (!batch || batch.status === 'RECEIVED') return;
-
     try {
         await db.updateBatchStatus(batchId, 'RECEIVED', new Date().toISOString());
-
         for (const item of batch.items) {
             const product = products.find(p => p.id === item.product_id);
             if (product) {
@@ -315,7 +280,7 @@ const App: React.FC = () => {
                 });
             }
         }
-        showNotify(`Lote recebido. Estoque Full atualizado!`);
+        showNotify(`Lote recebido!`);
     } catch (error) {
         showNotify('Erro ao receber lote.');
     }
@@ -324,29 +289,25 @@ const App: React.FC = () => {
   const handleUpdateFactoryStock = async (productId: string, newStock: number) => {
     try {
         await db.updateProductStock(productId, { stock_factory: newStock });
-        showNotify('Estoque de fábrica atualizado.');
+        showNotify('Estoque atualizado.');
     } catch (error) {
-        showNotify('Erro ao atualizar estoque.');
+        showNotify('Erro ao atualizar.');
     }
   };
 
-  // View Logic
   if (!session && currentView !== ViewState.CALLBACK) {
     return <Login onLogin={() => {}} />; 
   }
 
-  // Handle Callback View
   if (currentView === ViewState.CALLBACK) {
       return (
         <AuthCallback 
           onSuccess={() => {
-            // Remove code from url so we don't loop
             window.history.replaceState({}, document.title, window.location.pathname);
             setCurrentView(ViewState.SETTINGS);
             loadUserData();
           }} 
           onBack={() => {
-             // Remove code from url
              window.history.replaceState({}, document.title, window.location.pathname);
              setCurrentView(ViewState.SETTINGS);
           }}
@@ -359,7 +320,7 @@ const App: React.FC = () => {
           <div className="min-h-screen flex items-center justify-center bg-[#f3f4f6]">
               <div className="flex flex-col items-center gap-4">
                   <Loader2 className="animate-spin text-ml-blue" size={48} />
-                  <p className="text-gray-500 font-medium">Carregando seus dados...</p>
+                  <p className="text-gray-500 font-medium">Carregando dados...</p>
               </div>
           </div>
       );
@@ -374,7 +335,6 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 md:ml-64 p-4 md:p-8 overflow-y-auto">
-        {/* Mobile Header */}
         <div className="md:hidden flex justify-between items-center mb-6 bg-white p-4 rounded-lg shadow-sm">
           <h1 className="font-bold text-ml-blue">FullStock</h1>
           <button onClick={handleLogout}><LogOut size={20} className="text-red-500"/></button>

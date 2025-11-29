@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { UserSettings } from '../types';
 import { Save, ExternalLink, AlertTriangle, CheckCircle, RefreshCw, Copy, Info } from 'lucide-react';
-import { getAuthUrl, isMockConfiguration } from '../services/mercadolibre';
+import { getAuthUrl, isMockConfiguration, getAppId } from '../services/mercadolibre';
 import { updateUserTokens } from '../services/databaseService';
 import { supabase } from '../lib/supabaseClient';
 
@@ -13,7 +14,8 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
   const [threshold, setThreshold] = useState(settings.alert_threshold_days);
   const [isSaving, setIsSaving] = useState(false);
-  const [redirectUri] = useState(window.location.origin.replace(/\/$/, "")); // Remove trailing slash
+  const [redirectUri] = useState(window.location.origin.replace(/\/$/, "")); 
+  const [appId] = useState(getAppId());
 
   const handleSave = () => {
     setIsSaving(true);
@@ -28,7 +30,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
 
   const handleConnect = async () => {
     if (isMockConfiguration()) {
-      // MOCK MODE: Simulate immediate connection
+      // MOCK MODE
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         const mockUserId = "123456789";
@@ -40,17 +42,17 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
             is_connected_ml: true,
             ml_user_id: mockUserId
         });
-        alert("Modo de Simulação Ativado! (App ID não configurado). Você agora pode testar o dashboard.");
+        alert("Modo de Simulação Ativado! (App ID não configurado).");
       }
     } else {
-      // REAL MODE: Redirect to Mercado Livre OAuth with PKCE
+      // REAL MODE WITH PKCE
       try {
+        // Now getAuthUrl is async because of PKCE hashing
         const url = await getAuthUrl(window.location.origin);
-        console.log("Redirecting to:", url);
         window.location.href = url;
-      } catch (error) {
+      } catch (error: any) {
           console.error("Failed to generate Auth URL:", error);
-          alert("Erro ao iniciar conexão segura. Verifique o console.");
+          alert(`Erro ao iniciar conexão: ${error.message}`);
       }
     }
   };
@@ -80,11 +82,8 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
                             <p className="text-sm text-green-700 mt-1">
                                 ID do Usuário: {settings.ml_user_id || '---'}
                                 <br />
-                                Última sincronização: {settings.last_sync || 'Agora mesmo'}
+                                App ID em uso: {appId || 'Simulação'}
                             </p>
-                            <button className="mt-3 text-sm text-green-700 underline flex items-center gap-1 hover:text-green-900">
-                                <RefreshCw size={14}/> Forçar atualização de token
-                            </button>
                         </div>
                     </div>
                 ) : (
@@ -92,7 +91,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
                         <AlertTriangle className="text-gray-400 mt-1" size={20} />
                         <div>
                             <p className="font-bold text-gray-700">Nenhuma conta vinculada</p>
-                            <p className="text-sm text-gray-500 mt-1">Conecte sua conta do Mercado Livre para importar estoque Full e vendas automaticamente.</p>
+                            <p className="text-sm text-gray-500 mt-1">Conecte sua conta para importar estoque Full.</p>
                         </div>
                     </div>
                 )}
@@ -119,33 +118,44 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
 
         {/* Debug / Configuration Info */}
         {!settings.is_connected_ml && !isMockConfiguration() && (
-            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-3">
-                <div className="flex items-center gap-2 mb-2">
+            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-4">
+                <div className="flex items-center gap-2 mb-2 border-b border-yellow-200 pb-2">
                     <Info size={16} className="text-yellow-700" />
-                    <h4 className="text-sm font-bold text-yellow-800">ATENÇÃO: Configuração Necessária</h4>
+                    <h4 className="text-sm font-bold text-yellow-800">Debug & Configuração</h4>
                 </div>
                 
-                <p className="text-xs text-yellow-800">
-                    1. Copie o link abaixo e cole EXATAMENTE igual no campo <strong>Redirect URI</strong> dentro do <a href="https://developers.mercadolibre.com.br/devcenter" target="_blank" className="underline font-bold">DevCenter do ML</a>.
-                </p>
-                <div className="flex items-center gap-2">
-                    <code className="flex-1 bg-white border border-yellow-300 p-2 rounded text-xs text-gray-700 break-all font-mono">
-                        {redirectUri}
-                    </code>
-                    <button 
-                        onClick={() => navigator.clipboard.writeText(redirectUri)}
-                        className="p-2 text-yellow-700 hover:text-yellow-900 bg-yellow-100 rounded"
-                        title="Copiar URL"
-                    >
-                        <Copy size={16} />
-                    </button>
+                <div>
+                  <p className="text-xs text-yellow-800 font-bold mb-1">
+                      1. Redirect URI (Copie e cole no DevCenter do ML):
+                  </p>
+                  <div className="flex items-center gap-2">
+                      <code className="flex-1 bg-white border border-yellow-300 p-2 rounded text-xs text-gray-700 break-all font-mono">
+                          {redirectUri}
+                      </code>
+                      <button 
+                          onClick={() => navigator.clipboard.writeText(redirectUri)}
+                          className="p-2 text-yellow-700 hover:text-yellow-900 bg-yellow-100 rounded"
+                          title="Copiar URL"
+                      >
+                          <Copy size={16} />
+                      </button>
+                  </div>
                 </div>
 
-                <p className="text-xs text-yellow-800 border-t border-yellow-200 pt-3">
-                    2. Para que a conta permaneça conectada, você precisa configurar o <strong>Client Secret</strong> no Vercel.
-                    <br/>
-                    Variável: <code>NEXT_PUBLIC_ML_CLIENT_SECRET</code>
-                </p>
+                <div>
+                   <p className="text-xs text-yellow-800 font-bold mb-1">
+                       2. App ID (Do Vercel):
+                   </p>
+                   <code className="bg-white border border-yellow-300 p-1 px-2 rounded text-xs text-gray-700 font-mono">
+                       {appId || "Não detectado"}
+                   </code>
+                </div>
+
+                <div className="pt-2 border-t border-yellow-200">
+                    <p className="text-xs text-red-700 font-bold">
+                        ⚠️ Importante: Configure também o <code>NEXT_PUBLIC_ML_CLIENT_SECRET</code> no Vercel para que o login funcione.
+                    </p>
+                </div>
             </div>
         )}
       </div>
@@ -159,7 +169,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSaveSettings }) => {
                 Limiar de Ruptura (Dias)
             </label>
             <p className="text-xs text-gray-500 mb-3">
-                O sistema marcará como "Crítico" qualquer produto que tenha estoque estimado para durar menos que este número de dias.
+                Alertar quando estoque durar menos que:
             </p>
             
             <div className="flex gap-4">

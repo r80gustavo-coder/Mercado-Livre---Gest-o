@@ -204,8 +204,6 @@ export const disconnectMLAccount = async (userId: string) => {
   if (error) throw error;
 };
 
-// --- HELPERS ---
-
 const calculateAvgSales = (history: any[]) => {
   if (!history || history.length === 0) return 0;
   const total = history.reduce((acc, curr) => acc + curr.quantity_sold, 0);

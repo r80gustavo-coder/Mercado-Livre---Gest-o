@@ -1,206 +1,214 @@
-import { Product } from '../types';
 
-/**
- * MERCADO LIVRE API SERVICE
- */
+const ML_API_URL = 'https://api.mercadolibre.com';
+const AUTH_URL = 'https://auth.mercadolivre.com.br/authorization';
 
-// Helper to get env vars safely
-const getEnvVar = (key: string, fallback: string) => {
-  if (typeof process !== 'undefined' && process.env && process.env[key]) return process.env[key];
+// Helper to check if we have a real App ID configured
+export const getAppId = () => {
+  // 1. Tenta pegar do import.meta.env (Vite)
   // @ts-ignore
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) return import.meta.env[key];
-  return fallback;
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.NEXT_PUBLIC_ML_APP_ID) {
+    // @ts-ignore
+    const envId = import.meta.env.NEXT_PUBLIC_ML_APP_ID;
+    if (envId && envId !== 'YOUR_APP_ID') return envId;
+  }
+  // 2. Tenta pegar do process.env (Polyfill)
+  if (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_ML_APP_ID) {
+    const envId = process.env.NEXT_PUBLIC_ML_APP_ID;
+    if (envId && envId !== 'YOUR_APP_ID') return envId;
+  }
+  return null;
 };
 
-// Configurações
-const rawAppId = getEnvVar('NEXT_PUBLIC_ML_APP_ID', '');
-// Se o usuário não configurou nada ou deixou o padrão, assumimos string vazia para forçar erro de config ou modo mock manual
-const APP_ID = rawAppId === 'YOUR_APP_ID' ? '' : rawAppId;
-const CLIENT_SECRET = getEnvVar('NEXT_PUBLIC_ML_CLIENT_SECRET', '');
-const ML_API_URL = 'https://api.mercadolibre.com';
+export const getClientSecret = () => {
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.NEXT_PUBLIC_ML_CLIENT_SECRET) {
+    // @ts-ignore
+    return import.meta.env.NEXT_PUBLIC_ML_CLIENT_SECRET;
+  }
+  if (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_ML_CLIENT_SECRET) {
+    return process.env.NEXT_PUBLIC_ML_CLIENT_SECRET;
+  }
+  return null;
+};
 
-// Check if the app is running with default/missing credentials
 export const isMockConfiguration = () => {
-  return !APP_ID;
+  return !getAppId();
 };
 
 // --- PKCE HELPERS ---
 
-function generateRandomString(length: number) {
-  const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-  let result = '';
-  const values = new Uint32Array(length);
-  crypto.getRandomValues(values);
-  for (let i = 0; i < length; i++) {
-    result += charset[values[i] % charset.length];
-  }
-  return result;
-}
-
-async function sha256(plain: string) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plain);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return hash;
-}
-
-function base64UrlEncode(a: ArrayBuffer) {
-  let str = "";
-  const bytes = new Uint8Array(a);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    str += String.fromCharCode(bytes[i]);
-  }
-  return btoa(str)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-// 1. Authentication & Tokens
-
-export const getAuthUrl = async (origin: string) => {
-  const envRedirect = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', '');
-  const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
-  const redirectUri = envRedirect || cleanOrigin;
-
-  // Gerar PKCE Verifier e Challenge
-  const codeVerifier = generateRandomString(128);
-  const hashed = await sha256(codeVerifier);
-  const codeChallenge = base64UrlEncode(hashed);
-
-  // Salvar o verifier para usar no callback
-  localStorage.setItem('ml_code_verifier', codeVerifier);
-
-  return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${APP_ID}&redirect_uri=${redirectUri}&code_challenge=${codeChallenge}&code_challenge_method=S256`;
+// Generate a random string for code_verifier
+const generateCodeVerifier = () => {
+  const array = new Uint8Array(32);
+  window.crypto.getRandomValues(array);
+  return Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
 };
 
+// Hash the verifier to create code_challenge (SHA-256)
+const generateCodeChallenge = async (verifier: string) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const hash = await window.crypto.subtle.digest('SHA-256', data);
+  
+  // Convert buffer to base64url
+  return btoa(String.fromCharCode(...new Uint8Array(hash)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+};
+
+export const getAuthUrl = async (origin: string) => {
+  const appId = getAppId();
+  // Ensure no trailing slash
+  const redirectUri = origin.replace(/\/$/, ""); 
+  
+  if (!appId) {
+    throw new Error("App ID não configurado.");
+  }
+
+  // 1. Generate PKCE Verifier
+  const codeVerifier = generateCodeVerifier();
+  // 2. Save it to verify later
+  localStorage.setItem('ml_code_verifier', codeVerifier);
+  // 3. Generate Challenge
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+  return `${AUTH_URL}?response_type=code&client_id=${appId}&redirect_uri=${redirectUri}&code_challenge=${codeChallenge}&code_challenge_method=S256`;
+};
+
+// --- AUTH HANDLER ---
+
 export const handleAuthCallback = async (code: string, userId: string) => {
-    const envRedirect = getEnvVar('NEXT_PUBLIC_ML_REDIRECT_URI', '');
-    const cleanOrigin = window.location.origin.replace(/\/$/, "");
-    const redirectUri = envRedirect || cleanOrigin;
+  const appId = getAppId();
+  const clientSecret = getClientSecret();
+  const redirectUri = window.location.origin.replace(/\/$/, "");
+  
+  // Retrieve PKCE verifier
+  const codeVerifier = localStorage.getItem('ml_code_verifier');
 
-    // Recuperar o Code Verifier salvo antes do redirect
-    const codeVerifier = localStorage.getItem('ml_code_verifier');
+  // MOCK MODE (Fallback if no App ID)
+  if (!appId) {
+    console.warn("Using MOCK Auth because App ID is missing.");
+    return {
+      access_token: `mock_access_${Date.now()}`,
+      refresh_token: `mock_refresh_${Date.now()}`,
+      user_id: '123456789',
+      expires_in: 21600,
+    };
+  }
 
-    // Se Client Secret ou Verifier estiverem faltando, não conseguimos trocar o token
-    if (!CLIENT_SECRET || !codeVerifier) {
-         if (!CLIENT_SECRET) throw new Error("Client Secret não configurado no Vercel.");
-         if (!codeVerifier) throw new Error("Erro de segurança PKCE: Verifier não encontrado. Tente novamente.");
+  if (!clientSecret) {
+      throw new Error("Client Secret não configurado no Vercel (NEXT_PUBLIC_ML_CLIENT_SECRET).");
+  }
+
+  if (!codeVerifier) {
+      throw new Error("PKCE Verifier not found. Please try connecting again.");
+  }
+
+  // REAL OAUTH EXCHANGE
+  try {
+    const params = new URLSearchParams();
+    params.append('grant_type', 'authorization_code');
+    params.append('client_id', appId);
+    params.append('client_secret', clientSecret);
+    params.append('code', code);
+    params.append('redirect_uri', redirectUri);
+    params.append('code_verifier', codeVerifier); // Send verifier to prove identity
+
+    const response = await fetch(`${ML_API_URL}/oauth/token`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json'
+        },
+        body: params
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        console.error("ML Auth Error:", data);
+        // Map common errors to friendly messages
+        if (data.error === 'invalid_grant') throw new Error("Código de autorização inválido ou expirado. Tente novamente.");
+        if (data.error === 'invalid_client') throw new Error("Credenciais do App inválidas (Client Secret incorreto).");
+        if (data.error === 'redirect_uri_mismatch') throw new Error(`URL de redirecionamento incorreta. Cadastre exatamente: ${redirectUri}`);
+        
+        throw new Error(data.message || data.error || "Erro ao trocar token.");
     }
 
-    try {
-        console.log("Exchanging code for REAL token...");
-        
-        // Limpar o storage
-        localStorage.removeItem('ml_code_verifier');
+    // Clean up
+    localStorage.removeItem('ml_code_verifier');
 
-        const response = await fetch(`${ML_API_URL}/oauth/token`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': 'application/json'
-            },
-            body: new URLSearchParams({
-                grant_type: 'authorization_code',
-                client_id: APP_ID,
-                client_secret: CLIENT_SECRET,
-                code: code,
-                redirect_uri: redirectUri,
-                code_verifier: codeVerifier // PKCE OBRIGATÓRIO
-            })
-        });
+    return {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        user_id: data.user_id.toString(),
+        expires_in: data.expires_in
+    };
 
-        const data = await response.json();
-        
-        if (!response.ok) {
-            console.error("Token Exchange Error:", data);
-            
-            let errorMessage = "Falha na conexão com o Mercado Livre.";
-            
-            if (data.error === 'invalid_grant') {
-                errorMessage = "O código expirou. Tente conectar novamente.";
-            } else if (data.error === 'invalid_client') {
-                errorMessage = "Erro de configuração: Client Secret ou App ID inválidos.";
-            } else if (data.message) {
-                errorMessage = `Erro do ML: ${data.message}`;
-            }
-
-            throw new Error(errorMessage);
-        }
-        
-        return {
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
-            user_id: data.user_id?.toString()
-        };
-    } catch (e: any) {
-        console.error("Error in real token exchange:", e);
-        throw e;
-    }
+  } catch (error: any) {
+      console.error("Token Exchange Failed:", error);
+      throw error;
+  }
 };
 
 export const refreshMLToken = async (refreshToken: string) => {
-    if (!APP_ID || !CLIENT_SECRET) {
-        console.warn("Cannot refresh token: Missing Credentials");
-        return null;
-    }
+    const appId = getAppId();
+    const clientSecret = getClientSecret();
+
+    if (!appId || !clientSecret) return null;
 
     try {
+        const params = new URLSearchParams();
+        params.append('grant_type', 'refresh_token');
+        params.append('client_id', appId);
+        params.append('client_secret', clientSecret);
+        params.append('refresh_token', refreshToken);
+
         const response = await fetch(`${ML_API_URL}/oauth/token`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Accept': 'application/json'
             },
-            body: new URLSearchParams({
-                grant_type: 'refresh_token',
-                client_id: APP_ID,
-                client_secret: CLIENT_SECRET,
-                refresh_token: refreshToken
-            })
+            body: params
         });
 
         const data = await response.json();
-
-        if (!response.ok) {
-            console.error("Error refreshing token:", data);
-            return null; // Retorna null para disparar a desconexão no syncService
-        }
+        if (!response.ok) return null;
 
         return {
             access_token: data.access_token,
             refresh_token: data.refresh_token,
-            user_id: data.user_id
+            user_id: data.user_id.toString()
         };
-
-    } catch (error) {
-        console.error("Refresh token exception:", error);
+    } catch (e) {
+        console.error("Error refreshing token:", e);
         return null;
     }
 };
 
-// 2. Fetch Full Stock
-export const fetchFullStock = async (accessToken: string, userId: string) => {
-  if (!accessToken || accessToken === 'mock_token') return [];
+// --- DATA FETCHING ---
 
+export const fetchFullStock = async (accessToken: string, userId: string) => {
   try {
+    // 1. Search for Fulfillment items
     const searchUrl = `${ML_API_URL}/users/${userId}/items/search?logistic_type=fulfillment&access_token=${accessToken}`;
     const searchRes = await fetch(searchUrl);
     
-    if (searchRes.status === 401) {
-        throw new Error("UNAUTHORIZED");
-    }
-
+    if (searchRes.status === 401) throw new Error("UNAUTHORIZED");
+    
     const searchData = await searchRes.json();
     
     if (!searchData.results || searchData.results.length === 0) return [];
 
     const itemIds = searchData.results;
     
-    // ML limitation: Items API allows up to 20 IDs per request usually, but let's try all or paginate in future
-    // For now taking first 50 just to be safe or join all
-    const itemsUrl = `${ML_API_URL}/items?ids=${itemIds.slice(0,20).join(',')}&attributes=id,title,available_quantity,thumbnail,permalink,seller_custom_field&access_token=${accessToken}`;
+    // 2. Get Item Details (Chunked if necessary, simplified here)
+    // ML allows multiget up to 20 items usually, assume small inventory or need chunking logic for prod
+    // For this demo we take first 50
+    const idsToFetch = itemIds.slice(0, 50).join(',');
+    const itemsUrl = `${ML_API_URL}/items?ids=${idsToFetch}&access_token=${accessToken}`;
     const itemsRes = await fetch(itemsUrl);
     
     if (itemsRes.status === 401) throw new Error("UNAUTHORIZED");
@@ -210,73 +218,67 @@ export const fetchFullStock = async (accessToken: string, userId: string) => {
     return itemsData.map((item: any) => ({
       ml_item_id: item.body.id,
       title: item.body.title,
-      sku: item.body.seller_custom_field || item.body.id,
+      sku: item.body.seller_custom_field || item.body.id, // Fallback to ID if no SKU
       stock_full: item.body.available_quantity,
       permalink: item.body.permalink,
       thumbnail: item.body.thumbnail,
     }));
 
   } catch (error: any) {
-    if (error.message === "UNAUTHORIZED") throw error;
+    if (error.message === 'UNAUTHORIZED') throw error;
     console.error("Error fetching ML Stock:", error);
     return [];
   }
 };
 
-// 3. Fetch Active Items for Import
 export const fetchActiveFullItems = async (accessToken: string, userId: string) => {
-  if (!accessToken || accessToken === 'mock_token') {
-      throw new Error("Token inválido para importação.");
-  }
+   try {
+    const searchUrl = `${ML_API_URL}/users/${userId}/items/search?logistic_type=fulfillment&status=active&limit=100&access_token=${accessToken}`;
+    const searchRes = await fetch(searchUrl);
+    
+    if (searchRes.status === 401) throw new Error("UNAUTHORIZED");
 
-  try {
-    const items = await fetchFullStock(accessToken, userId);
-    return items.map((item: any) => ({
-        ml_item_id: item.ml_item_id,
-        title: item.title,
-        sku: item.sku,
-        stock_full: item.stock_full,
-        image_url: item.thumbnail
+    const searchData = await searchRes.json();
+    if (!searchData.results || searchData.results.length === 0) return [];
+
+    const itemIds = searchData.results.slice(0, 50).join(','); // Limit 50 for multiget
+    const itemsUrl = `${ML_API_URL}/items?ids=${itemIds}&access_token=${accessToken}`;
+    
+    const itemsRes = await fetch(itemsUrl);
+    if (itemsRes.status === 401) throw new Error("UNAUTHORIZED");
+    
+    const itemsData = await itemsRes.json();
+    
+    return itemsData.map((i: any) => ({
+        ml_item_id: i.body.id,
+        title: i.body.title,
+        sku: i.body.seller_custom_field || i.body.id,
+        image_url: i.body.thumbnail,
+        stock_full: i.body.available_quantity
     }));
-  } catch (error) {
-    throw error;
-  }
+
+   } catch (error: any) {
+       if (error.message === 'UNAUTHORIZED') throw error;
+       console.error("Error fetching active items:", error);
+       return [];
+   }
 };
 
-// 4. Fetch Sales History
 export const fetchSalesHistory = async (accessToken: string, sellerId: string) => {
-  if (!accessToken || accessToken === 'mock_token') return {};
-
   try {
     const dateFrom = new Date();
     dateFrom.setDate(dateFrom.getDate() - 30);
     const dateStr = dateFrom.toISOString();
 
     const url = `${ML_API_URL}/orders/search?seller=${sellerId}&order.date_created.from=${dateStr}&access_token=${accessToken}`;
-    
     const res = await fetch(url);
     
     if (res.status === 401) throw new Error("UNAUTHORIZED");
 
     const data = await res.json();
-
-    const salesMap: Record<string, Record<string, number>> = {}; 
-
-    if (data.results) {
-        data.results.forEach((order: any) => {
-            const date = order.date_created.split('T')[0];
-            order.order_items.forEach((item: any) => {
-                const sku = item.item.seller_custom_field || item.item.id;
-                if (!salesMap[sku]) salesMap[sku] = {};
-                if (!salesMap[sku][date]) salesMap[sku][date] = 0;
-                salesMap[sku][date] += item.quantity;
-            });
-        });
-    }
-
-    return salesMap;
+    return data; // Process in Sync Service
   } catch (error: any) {
-    if (error.message === "UNAUTHORIZED") throw error;
+    if (error.message === 'UNAUTHORIZED') throw error;
     console.error("Error fetching Sales:", error);
     return {};
   }

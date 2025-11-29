@@ -3,12 +3,9 @@ import { Product } from "../types";
 import { calculateRupture } from "./inventoryService";
 
 export const analyzeStockRisks = async (products: Product[]): Promise<string> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    return "API Key not found. Please set the API_KEY environment variable to use AI features.";
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Initialize Gemini API client directly with the environment variable as per strict guidelines
+  // The API key must be obtained exclusively from process.env.API_KEY
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   // Filter for risky products to save tokens and focus context
   const riskyProducts = products.map(p => {

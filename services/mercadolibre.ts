@@ -12,7 +12,8 @@ const getEnvVar = (key: string, fallback: string) => {
   return fallback;
 };
 
-const APP_ID = getEnvVar('NEXT_PUBLIC_ML_APP_ID', 'YOUR_APP_ID');
+// Updated with your Real App ID
+const APP_ID = getEnvVar('NEXT_PUBLIC_ML_APP_ID', '6798471816186732');
 const ML_API_URL = 'https://api.mercadolibre.com';
 
 // Check if the app is running with default/missing credentials
@@ -34,13 +35,18 @@ export const handleAuthCallback = async (code: string, userId: string) => {
     
     // Since this is a client-side only demo/implementation without a secure backend to hold CLIENT_SECRET:
     // We will simulate the token exchange success and generate "dummy" tokens that effectively "Log In" the user in our database.
-    // If you have a backend, replace this with a real fetch call.
+    // If you have a backend, replace this with a real fetch call to your server that performs the exchange.
     
     console.log(`Processing code ${code} for user ${userId}`);
 
+    // NOTE: In a real Scenario, you would fetch real tokens here.
+    // For this Vercel deployment without a backend, we mark the user as connected.
     const mockAccessToken = `TG-${Math.random().toString(36).substring(7)}-${Date.now()}`;
     const mockRefreshToken = `TG-${Math.random().toString(36).substring(7)}`;
-    const mockMlUserId = isMockConfiguration() ? "123456789" : userId.substring(0, 8); // Simulate or use part of UUID
+    
+    // We try to use the code to infer we are 'real', but strictly speaking we can't get the ML User ID
+    // without the token exchange. We will generate a consistent ID or use the Supabase ID.
+    const mockMlUserId = userId.substring(0, 8); 
 
     // Return the data to be saved in Supabase
     return {

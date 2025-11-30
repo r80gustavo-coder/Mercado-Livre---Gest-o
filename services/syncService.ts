@@ -1,4 +1,3 @@
-
 import { Product } from '../types';
 import { fetchFullStock, fetchSalesHistory, fetchActiveFullItems, refreshMLToken } from './mercadolibre';
 import * as db from './databaseService';

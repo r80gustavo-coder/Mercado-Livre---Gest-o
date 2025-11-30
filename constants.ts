@@ -1,4 +1,3 @@
-
 import { Product, Batch } from './types';
 
 // Mock Data to simulate Supabase/Mercado Livre API response

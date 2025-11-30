@@ -1,4 +1,3 @@
-
 const ML_API_URL = 'https://api.mercadolibre.com';
 const AUTH_URL = 'https://auth.mercadolivre.com.br/authorization';
 
@@ -233,7 +232,7 @@ export const fetchFullStock = async (accessToken: string, userId: string) => {
 
 export const fetchActiveFullItems = async (accessToken: string, userId: string) => {
    try {
-    const searchUrl = `${ML_API_URL}/users/${userId}/items/search?logistic_type=fulfillment&status=active&limit=100&access_token=${accessToken}`;
+    const searchUrl = `${ML_API_URL}/users/${userId}/items/search?status=active&limit=100&access_token=${accessToken}`;
     const searchRes = await fetch(searchUrl);
     
     if (searchRes.status === 401) throw new Error("UNAUTHORIZED");
@@ -249,13 +248,17 @@ export const fetchActiveFullItems = async (accessToken: string, userId: string) 
     
     const itemsData = await itemsRes.json();
     
-    return itemsData.map((i: any) => ({
-        ml_item_id: i.body.id,
-        title: i.body.title,
-        sku: i.body.seller_custom_field || i.body.id,
-        image_url: i.body.thumbnail,
-        stock_full: i.body.available_quantity
-    }));
+    return itemsData.map((i: any) => {
+        // Detect if item is fulfillment
+        const isFull = i.body.shipping?.logistic_type === 'fulfillment';
+        return {
+            ml_item_id: i.body.id,
+            title: i.body.title,
+            sku: i.body.seller_custom_field || i.body.id,
+            image_url: i.body.thumbnail,
+            stock_full: isFull ? i.body.available_quantity : 0 // Only use stock if already in full
+        };
+    });
 
    } catch (error: any) {
        if (error.message === 'UNAUTHORIZED') throw error;

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ViewState } from '../types';
 import { LayoutDashboard, Package, Factory, Truck, Settings, LogOut } from 'lucide-react';

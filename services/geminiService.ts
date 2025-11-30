@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { Product } from "../types";
 import { calculateRupture } from "./inventoryService";

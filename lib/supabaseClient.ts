@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 // Helper function to safely get environment variables in Vite/Vercel

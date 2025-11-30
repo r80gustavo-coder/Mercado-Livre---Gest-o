@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Batch, Product, BatchItem } from '../types';
 import { Truck, CheckCircle, PackagePlus, X, Trash2, Calendar } from 'lucide-react';

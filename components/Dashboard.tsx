@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Product } from '../types';
 import { calculateRupture } from '../services/inventoryService';

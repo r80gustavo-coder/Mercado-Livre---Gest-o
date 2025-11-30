@@ -1,4 +1,3 @@
-
 import { Product, RupturePrediction } from '../types';
 
 export const calculateRupture = (stockFull: number, avgDailySales: number): RupturePrediction => {

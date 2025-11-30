@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Product } from '../types';
 import { Factory, Plus, Save } from 'lucide-react';

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { UserSettings } from '../types';
 import { Save, ExternalLink, AlertTriangle, CheckCircle, RefreshCw, Copy, Info } from 'lucide-react';

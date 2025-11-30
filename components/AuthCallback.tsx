@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Loader2, XCircle, ArrowLeft, RefreshCw } from 'lucide-react';
 import { handleAuthCallback } from '../services/mercadolibre';
